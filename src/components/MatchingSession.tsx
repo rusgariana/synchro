@@ -42,6 +42,7 @@ export function MatchingSession({ events }: Props) {
     const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
     const [noteText, setNoteText] = useState('');
     const [notes, setNotes] = useState<Record<string, string>>({}); // uid -> decrypted text
+    const [processedMessageCount, setProcessedMessageCount] = useState(0); // Track how many messages we've processed
 
 
 
@@ -115,13 +116,16 @@ export function MatchingSession({ events }: Props) {
 
         // Handle Notes (any state after results)
         if (state === 'RESULTS') {
-            // Check for NOTE messages
-            for (const msg of relevant) {
+            // Only process new NOTE messages (ones we haven't seen before)
+            const newMessages = relevant.slice(processedMessageCount);
+
+            for (const msg of newMessages) {
                 if (msg.type === 'NOTE') {
                     const { uid, encrypted } = msg.payload;
                     if (sharedSecret) {
                         try {
                             const decrypted = await decryptNote(encrypted, sharedSecret);
+                            console.log('[handleMessages] Decrypted new note for', uid, ':', decrypted);
                             // Always update with the latest note from the peer
                             setNotes(prev => ({ ...prev, [uid]: decrypted }));
                         } catch (e) {
@@ -130,8 +134,13 @@ export function MatchingSession({ events }: Props) {
                     }
                 }
             }
+
+            // Update processed count
+            if (relevant.length > processedMessageCount) {
+                setProcessedMessageCount(relevant.length);
+            }
         }
-    }, [role, state, events, privateKey, joinerDoubleBlindedA, sharedSecret, notes]);
+    }, [role, state, events, privateKey, joinerDoubleBlindedA, sharedSecret, notes, processedMessageCount]);
 
     // Polling - moved here after handleMessages is defined
     useEffect(() => {
