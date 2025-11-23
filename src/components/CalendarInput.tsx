@@ -65,7 +65,7 @@ export function CalendarInput({ onCalendarLoaded }: Props) {
                 <ol className="list-decimal list-inside space-y-1">
                     <li>Go to <strong>Settings</strong> → <strong>Calendar Syncing</strong></li>
                     <li>Click <strong>Add iCal Subscription</strong></li>
-                    <li>Copy the URL that appears (starts with <code className="bg-zinc-800 px-1 rounded">https://lu.ma/ics/...</code>)</li>
+                    <li>Copy the URL that appears</li>
                 </ol>
                 <p className="mt-3 text-xs text-zinc-500">
                     Note: This is your private feed. We process it locally in your browser to extract event IDs. Your schedule is never sent to our servers.

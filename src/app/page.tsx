@@ -52,11 +52,26 @@ export default function Home() {
                             Sync Calendars.<br />Keep Privacy.
                         </h1>
                         <p className="text-xl text-zinc-400 max-w-lg mx-auto">
-                            Discover mutual events with friends without revealing your full schedule.
-                            Powered by Zero-Knowledge PSI and ENS.
+                            Discover overlapping events with peers without exposing your full schedule.
+                            Powered by Private Set Intersection and ENS.
                         </p>
                         <div className="p-4 rounded-lg bg-zinc-900/50 border border-zinc-800 inline-block">
                             <p className="text-sm text-zinc-500">Connect your wallet to get started</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-2xl mx-auto mt-12 text-sm text-zinc-500">
+                            <div className="p-4 rounded-lg bg-zinc-900/30 border border-zinc-800">
+                                <strong className="text-zinc-300 block mb-1">Client-Side Only</strong>
+                                Your calendar is parsed locally. We never store your events.
+                            </div>
+                            <div className="p-4 rounded-lg bg-zinc-900/30 border border-zinc-800">
+                                <strong className="text-zinc-300 block mb-1">Private Matching</strong>
+                                Matching happens via blinded keys. No data leakage.
+                            </div>
+                            <div className="p-4 rounded-lg bg-zinc-900/30 border border-zinc-800">
+                                <strong className="text-zinc-300 block mb-1">Encrypted Messages</strong>
+                                Add end-to-end encrypted notes to matched events.
+                            </div>
                         </div>
                     </div>
                 ) : (
@@ -65,7 +80,6 @@ export default function Home() {
                             <div className="w-full flex flex-col items-center gap-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
                                 <div className="text-center space-y-2">
                                     <h2 className="text-3xl font-bold">Load Your Calendar</h2>
-                                    <p className="text-zinc-400">Paste your Lu.ma ICS link to begin.</p>
                                 </div>
                                 <CalendarInput onCalendarLoaded={setEvents} />
 
