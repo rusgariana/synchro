@@ -76,7 +76,7 @@ export function blindString(str: string, privateKey: Uint8Array): string {
 export async function encryptNote(text: string, sharedSecretHex: string): Promise<string> {
     const key = await window.crypto.subtle.importKey(
         'raw',
-        hexToBytes(sharedSecretHex),
+        hexToBytes(sharedSecretHex) as BufferSource,
         { name: 'AES-GCM' },
         false,
         ['encrypt']
@@ -102,16 +102,16 @@ export async function decryptNote(encrypted: string, sharedSecretHex: string): P
 
     const key = await window.crypto.subtle.importKey(
         'raw',
-        hexToBytes(sharedSecretHex),
+        hexToBytes(sharedSecretHex) as BufferSource,
         { name: 'AES-GCM' },
         false,
         ['decrypt']
     );
 
     const decrypted = await window.crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv },
+        { name: 'AES-GCM', iv: iv as BufferSource },
         key,
-        ciphertext
+        ciphertext as BufferSource
     );
 
     return new TextDecoder().decode(decrypted);
