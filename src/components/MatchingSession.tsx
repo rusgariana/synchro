@@ -119,9 +119,10 @@ export function MatchingSession({ events }: Props) {
             for (const msg of relevant) {
                 if (msg.type === 'NOTE') {
                     const { uid, encrypted } = msg.payload;
-                    if (sharedSecret && !notes[uid]) {
+                    if (sharedSecret) {
                         try {
                             const decrypted = await decryptNote(encrypted, sharedSecret);
+                            // Always update with the latest note from the peer
                             setNotes(prev => ({ ...prev, [uid]: decrypted }));
                         } catch (e) {
                             console.error('Failed to decrypt note', e);
