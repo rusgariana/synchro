@@ -12,7 +12,7 @@ import {
     computeSharedSecret,
     getPublicKey
 } from '@/lib/crypto';
-import { Loader2, Copy, Check, Lock, Unlock } from 'lucide-react';
+import { Loader2, Copy, Check, MessageSquare } from 'lucide-react';
 
 interface Props {
     events: CalendarEvent[];
@@ -397,8 +397,9 @@ export function MatchingSession({ events }: Props) {
                                     <button
                                         onClick={() => setActiveNoteId(activeNoteId === event.uid ? null : event.uid)}
                                         className="p-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 transition-colors"
+                                        title={notes[event.uid] ? "View/edit note" : "Add note"}
                                     >
-                                        {notes[event.uid] ? <Unlock className="w-4 h-4 text-green-400" /> : <Lock className="w-4 h-4" />}
+                                        <MessageSquare className={`w-4 h-4 ${notes[event.uid] ? 'text-green-400 fill-green-400' : ''}`} />
                                     </button>
                                 </div>
 

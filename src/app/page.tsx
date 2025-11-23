@@ -56,7 +56,7 @@ export default function Home() {
                             Powered by Private Set Intersection and ENS.
                         </p>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-2xl mx-auto mt-12 text-sm text-zinc-500">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-2xl mx-auto mt-16 text-sm text-zinc-500">
                             <div className="p-4 rounded-lg bg-zinc-900/30 border border-zinc-800">
                                 <strong className="text-zinc-300 block mb-1">Client-Side Only</strong>
                                 Your calendar is parsed locally. We never store your events.
