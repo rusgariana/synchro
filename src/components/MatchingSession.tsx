@@ -42,7 +42,6 @@ export function MatchingSession({ events }: Props) {
     const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
     const [noteText, setNoteText] = useState('');
     const [notes, setNotes] = useState<Record<string, string>>({}); // uid -> decrypted text
-    const [processedMessageCount, setProcessedMessageCount] = useState(0); // Track how many messages we've processed
 
 
 
@@ -116,41 +115,23 @@ export function MatchingSession({ events }: Props) {
 
         // Handle Notes (any state after results)
         if (state === 'RESULTS') {
-            console.log('[handleMessages] In RESULTS state, checking for notes');
-            console.log('[handleMessages] Total relevant messages:', relevant.length);
-            console.log('[handleMessages] Processed count:', processedMessageCount);
-
-            // Only process new NOTE messages (ones we haven't seen before)
-            const newMessages = relevant.slice(processedMessageCount);
-            console.log('[handleMessages] New messages to process:', newMessages.length);
-
-            for (const msg of newMessages) {
-                console.log('[handleMessages] Processing message type:', msg.type);
+            // Check for NOTE messages
+            for (const msg of relevant) {
                 if (msg.type === 'NOTE') {
                     const { uid, encrypted } = msg.payload;
-                    console.log('[handleMessages] Found NOTE for uid:', uid);
                     if (sharedSecret) {
                         try {
                             const decrypted = await decryptNote(encrypted, sharedSecret);
-                            console.log('[handleMessages] Decrypted new note for', uid, ':', decrypted);
                             // Always update with the latest note from the peer
                             setNotes(prev => ({ ...prev, [uid]: decrypted }));
                         } catch (e) {
                             console.error('Failed to decrypt note', e);
                         }
-                    } else {
-                        console.log('[handleMessages] No shared secret available');
                     }
                 }
             }
-
-            // Update processed count
-            if (relevant.length > processedMessageCount) {
-                console.log('[handleMessages] Updating processed count from', processedMessageCount, 'to', relevant.length);
-                setProcessedMessageCount(relevant.length);
-            }
         }
-    }, [role, state, events, privateKey, joinerDoubleBlindedA, sharedSecret, notes, processedMessageCount]);
+    }, [role, state, events, privateKey, joinerDoubleBlindedA, sharedSecret, notes]);
 
     // Polling - moved here after handleMessages is defined
     useEffect(() => {
