@@ -6,8 +6,8 @@ import { Providers } from "./providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-    title: "Meetpoint",
-    description: "Privacy-preserving calendar matching",
+    title: "Synchro",
+    description: "Privacy-preserving calendar synchronization and matching",
 };
 
 export default function RootLayout({

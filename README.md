@@ -1,10 +1,10 @@
-# Meetpoint 🔒
+# Synchro 🔒
 
 **Privacy-preserving calendar matching powered by cryptography**
 
-Meetpoint allows two people to discover mutual events from their Lu.ma calendars without revealing their full schedules. Built with Zero-Knowledge Private Set Intersection (PSI) and end-to-end encryption.
+Synchro allows two people to discover mutual events from their Lu.ma calendars without revealing their full schedules. Built with Zero-Knowledge Private Set Intersection (PSI) and end-to-end encryption.
 
-🔗 **Live Demo:** [https://meetpoint-zeta.vercel.app/](https://meetpoint-zeta.vercel.app/)
+🔗 **Live Demo:** [https://synchro.vercel.app/](https://synchro.vercel.app/)
 
 ## Features
 
@@ -19,7 +19,7 @@ Meetpoint allows two people to discover mutual events from their Lu.ma calendars
 
 ### The PSI Protocol
 
-Meetpoint uses an **ECDH-based Private Set Intersection** protocol:
+Synchro uses an **ECDH-based Private Set Intersection** protocol:
 
 1. **Alice** blinds her event UIDs: `{aH(x₁), aH(x₂), ...}`
 2. **Bob** double-blinds Alice's set and sends his own: `{abH(x₁), ...}` and `{bH(y₁), ...}`
@@ -55,8 +55,8 @@ Meetpoint uses an **ECDH-based Private Set Intersection** protocol:
 
 ```bash
 # Clone the repository
-git clone https://github.com/rusgariana/meetpoint.git
-cd meetpoint
+git clone https://github.com/rusgariana/synchro.git
+cd synchro
 
 # Install dependencies
 npm install
@@ -73,7 +73,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 2. **Load Calendar**: 
    - Go to Lu.ma → Settings → Calendar Syncing → Add iCal Subscription
    - Copy the ICS URL
-   - Paste it into Meetpoint
+   - Paste it into Synchro
 3. **Create/Join Session**:
    - **User A**: Click "Start Session" and share the Session ID
    - **User B**: Enter the Session ID and click "Join"
@@ -86,12 +86,12 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed instructions on deploying to V
 
 **Quick Deploy:**
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/rusgariana/meetpoint)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/rusgariana/synchro)
 
 ## Project Structure
 
 ```
-meetpoint/
+synchro/
 ├── src/
 │   ├── app/
 │   │   ├── api/
@@ -152,7 +152,7 @@ MIT License - see [LICENSE](LICENSE) for details
 ## Contact
 
 - GitHub: [@rusgariana](https://github.com/rusgariana)
-- Repository: [meetpoint](https://github.com/rusgariana/meetpoint)
+- Repository: [synchro](https://github.com/rusgariana/synchro)
 
 ---
 

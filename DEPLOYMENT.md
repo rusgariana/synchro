@@ -1,10 +1,10 @@
-# Deploying Meetpoint to Vercel
+# Deploying Synchro to Vercel
 
-This guide will walk you through deploying your Meetpoint app to Vercel.
+This guide will walk you through deploying your Synchro app to Vercel.
 
 ## Prerequisites
 
-- Your code pushed to GitHub at `https://github.com/rusgariana/meetpoint`
+- Your code pushed to GitHub at `https://github.com/rusgariana/synchro`
 - A GitHub account
 - A Vercel account (free tier is fine)
 
@@ -24,7 +24,7 @@ git push origin main
 > **Note:** If you haven't initialized a git repository yet, run:
 > ```bash
 > git init
-> git remote add origin https://github.com/rusgariana/meetpoint.git
+> git remote add origin https://github.com/rusgariana/synchro.git
 > git add .
 > git commit -m "Initial commit"
 > git branch -M main
@@ -42,7 +42,7 @@ git push origin main
 
 1. Once logged in, click **"Add New..."** → **"Project"**
 2. You'll see a list of your GitHub repositories
-3. Find **"rusgariana/meetpoint"** and click **"Import"**
+3. Find **"rusgariana/synchro"** and click **"Import"**
 
 ### 4. Configure Your Project
 
@@ -70,14 +70,14 @@ This usually takes 1-3 minutes. You'll see a progress indicator.
 
 Once deployment is complete, you'll see:
 - A **"Congratulations"** screen
-- Your live URL (something like `https://meetpoint-xyz123.vercel.app`)
+- Your live URL (something like `https://synchro-xyz123.vercel.app`)
 - A preview of your deployed site
 
 Click **"Visit"** to see your live app!
 
 ### 7. Set Up Custom Domain (Optional)
 
-If you want a custom domain like `meetpoint.yourdomain.com`:
+If you want a custom domain like `synchro.yourdomain.com`:
 
 1. Go to your project dashboard on Vercel
 2. Click **"Settings"** → **"Domains"**

@@ -21,7 +21,7 @@ export default function Home() {
             {/* Header */}
             <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex mb-12">
                 <p className="fixed left-0 top-0 flex w-full justify-center border-b border-zinc-800 bg-zinc-950/50 pb-6 pt-8 backdrop-blur-2xl lg:static lg:w-auto lg:rounded-xl lg:border lg:p-4">
-                    Meetpoint &nbsp;
+                    Synchro &nbsp;
                     <code className="font-mono font-bold text-primary">Privacy-First Matching</code>
                     <a
                         href="https://github.com/rusgariana/meetpoint"
