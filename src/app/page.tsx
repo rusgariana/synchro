@@ -48,6 +48,11 @@ export default function Home() {
             <div className="w-full max-w-3xl flex flex-col items-center gap-12 z-0">
                 {!mounted || !isConnected ? (
                     <div className="text-center space-y-6 mt-20">
+                        <img
+                            src="/logo.png"
+                            alt="Synchro Logo"
+                            className="w-24 h-24 mx-auto mb-4 animate-in zoom-in-95 duration-700"
+                        />
                         <h1 className="text-6xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary via-purple-400 to-accent">
                             Sync Calendars.<br />Keep Privacy.
                         </h1>
