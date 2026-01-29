@@ -58,7 +58,6 @@ export default function Home() {
                         </h1>
                         <p className="text-xl text-zinc-400 max-w-lg mx-auto">
                             Discover overlapping events with peers without exposing your full schedule.
-                            Powered by Private Set Intersection and ENS.
                         </p>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-2xl mx-auto mt-16 text-sm text-zinc-500">
