@@ -70,7 +70,7 @@ This usually takes 1-3 minutes. You'll see a progress indicator.
 
 Once deployment is complete, you'll see:
 - A **"Congratulations"** screen
-- Your live URL (something like `https://synchro-xyz123.vercel.app`)
+- Your live URL: `https://synchro-social.vercel.app`
 - A preview of your deployed site
 
 Click **"Visit"** to see your live app!
