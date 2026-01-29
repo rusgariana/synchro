@@ -24,7 +24,7 @@ export default function Home() {
                     Synchro &nbsp;
                     <code className="font-mono font-bold text-primary">Privacy-First Matching</code>
                     <a
-                        href="https://github.com/rusgariana/meetpoint"
+                        href="https://github.com/rusgariana/synchro"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="ml-4 text-zinc-400 hover:text-white transition-colors"
