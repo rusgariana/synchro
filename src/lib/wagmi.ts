@@ -1,17 +1,9 @@
-import { http, createConfig } from 'wagmi';
+import { getDefaultConfig } from '@rainbow-me/rainbowkit';
 import { mainnet, sepolia } from 'wagmi/chains';
-import { injected, walletConnect } from 'wagmi/connectors';
 
-export const config = createConfig({
+export const config = getDefaultConfig({
+    appName: 'Synchro',
+    projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'YOUR_PROJECT_ID',
     chains: [mainnet, sepolia],
-    connectors: [
-        injected(),
-        walletConnect({
-            projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
-        }),
-    ],
-    transports: {
-        [mainnet.id]: http(),
-        [sepolia.id]: http(),
-    },
+    ssr: true, // If your dApp uses server side rendering (SSR)
 });
