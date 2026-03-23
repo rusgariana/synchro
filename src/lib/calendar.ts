@@ -8,6 +8,9 @@ export interface CalendarEvent {
     description?: string;
     location?: string;
     url?: string;
+    // Google Calendar specific (populated when using Google Calendar API)
+    googleEventId?: string;
+    privateNote?: string; // from extendedProperties.private.synchro_note
 }
 
 export function parseICS(icsContent: string): CalendarEvent[] {

@@ -1,24 +1,18 @@
 'use client';
 
-import '@rainbow-me/rainbowkit/styles.css';
+import { type ReactNode } from 'react';
+import { GoogleOAuthProvider } from '@react-oauth/google';
+import { GoogleAuthProvider } from '@/lib/googleAuth';
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
-import { WagmiProvider } from 'wagmi';
-import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
-
-import { config } from '@/lib/wagmi';
-
-export function Providers(props: { children: ReactNode }) {
-    const [queryClient] = useState(() => new QueryClient());
+export function Providers({ children }: { children: ReactNode }) {
+    // We expect NEXT_PUBLIC_GOOGLE_CLIENT_ID to be provided by the user in .env.local
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || 'MISSING_CLIENT_ID';
 
     return (
-        <WagmiProvider config={config}>
-            <QueryClientProvider client={queryClient}>
-                <RainbowKitProvider theme={darkTheme()}>
-                    {props.children}
-                </RainbowKitProvider>
-            </QueryClientProvider>
-        </WagmiProvider>
+        <GoogleOAuthProvider clientId={clientId}>
+            <GoogleAuthProvider>
+                {children}
+            </GoogleAuthProvider>
+        </GoogleOAuthProvider>
     );
 }

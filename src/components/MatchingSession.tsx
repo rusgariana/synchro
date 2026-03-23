@@ -12,10 +12,13 @@ import {
     computeSharedSecret,
     getPublicKey
 } from '@/lib/crypto';
-import { Loader2, Copy, Check, MessageSquare } from 'lucide-react';
+import { savePrivateNote } from '@/lib/googleCalendar';
+import { Loader2, Copy, Check, MessageSquare, Lock, Trash2, ArrowLeft } from 'lucide-react';
+import { getSavedSessions, saveSession, deleteSession, SavedSession } from '@/lib/sessionStorage';
 
 interface Props {
     events: CalendarEvent[];
+    accessToken: string;
 }
 
 type State = 'IDLE' | 'CREATED' | 'JOINING' | 'EXCHANGING' | 'COMPUTING' | 'RESULTS';
@@ -26,7 +29,7 @@ interface Message {
     payload: any;
 }
 
-export function MatchingSession({ events }: Props) {
+export function MatchingSession({ events, accessToken }: Props) {
     const [state, setState] = useState<State>('IDLE');
     const [sessionId, setSessionId] = useState('');
     const [inputSessionId, setInputSessionId] = useState('');
@@ -43,7 +46,72 @@ export function MatchingSession({ events }: Props) {
     const [noteText, setNoteText] = useState('');
     const [notes, setNotes] = useState<Record<string, string>>({}); // uid -> decrypted text
 
+    // Google Private Notes State
+    const [privateNotes, setPrivateNotes] = useState<Record<string, string>>(() => {
+        const initial: Record<string, string> = {};
+        events.forEach(e => {
+            if (e.privateNote && e.googleEventId) {
+                initial[e.googleEventId] = e.privateNote;
+            }
+        });
+        return initial;
+    });
+    const [activePrivateNoteId, setActivePrivateNoteId] = useState<string | null>(null);
+    const [privateNoteText, setPrivateNoteText] = useState('');
+    const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
 
+    const handleSavePrivateNote = async (googleEventId: string) => {
+        setSavingNoteId(googleEventId);
+        try {
+            await savePrivateNote(accessToken, googleEventId, privateNoteText);
+            setPrivateNotes(prev => ({ ...prev, [googleEventId]: privateNoteText }));
+            setActivePrivateNoteId(null);
+            setPrivateNoteText('');
+        } catch (e) {
+            console.error('Failed to save private note to Google Calendar', e);
+            alert('Failed to save private note. Ensure popup blockers are disabled and try again.');
+        } finally {
+            setSavingNoteId(null);
+        }
+    };
+
+    // Saved Sessions State
+    const [savedSessions, setSavedSessions] = useState<SavedSession[]>([]);
+
+    useEffect(() => {
+        setSavedSessions(getSavedSessions());
+    }, []);
+
+    // Effect to auto-save current active session
+    useEffect(() => {
+        if (state === 'RESULTS' && sessionId && role) {
+            saveSession({
+                id: sessionId,
+                role,
+                date: new Date().toISOString(),
+                matches,
+                notes
+            });
+            // Refresh list in background
+            setSavedSessions(getSavedSessions());
+        }
+    }, [state, sessionId, role, matches, notes]);
+
+    const loadSavedSession = (s: SavedSession) => {
+        setSessionId(s.id);
+        setRole(s.role as any);
+        setMatches(s.matches);
+        setNotes(s.notes);
+        setState('RESULTS');
+    };
+
+    const handleDeleteSession = (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (confirm('Delete this saved session?')) {
+            deleteSession(id);
+            setSavedSessions(getSavedSessions());
+        }
+    };
 
     const addLog = (msg: string) => setLogs((prev: string[]) => [...prev, msg]);
 
@@ -342,6 +410,51 @@ export function MatchingSession({ events }: Props) {
                 </div>
             )}
 
+            {/* Saved Sessions List */}
+            {state === 'IDLE' && savedSessions.length > 0 && (
+                <div className="mt-12 pt-8 border-t border-zinc-800/50">
+                    <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+                        Saved Sessions
+                        <span className="text-xs px-2 py-1 rounded-full bg-zinc-800 text-zinc-400 font-normal">
+                            {savedSessions.length}
+                        </span>
+                    </h3>
+                    <div className="grid gap-3">
+                        {savedSessions.map(s => (
+                            <div 
+                                key={s.id}
+                                onClick={() => loadSavedSession(s)}
+                                className="flex items-center justify-between p-4 rounded-xl bg-zinc-800/30 hover:bg-zinc-800 border border-zinc-700/30 hover:border-zinc-700 cursor-pointer transition-colors group"
+                            >
+                                <div>
+                                    <div className="font-medium text-white group-hover:text-primary transition-colors">
+                                        Matching Session ({s.role.toLowerCase()})
+                                    </div>
+                                    <div className="text-xs text-zinc-500 mt-1 flex gap-3">
+                                        <span>{new Date(s.date).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})}</span>
+                                        <span>•</span>
+                                        <span>{s.matches.length} matches</span>
+                                        {Object.keys(s.notes).length > 0 && (
+                                            <>
+                                                <span>•</span>
+                                                <span className="text-green-400">{Object.keys(s.notes).length} peer notes</span>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={(e) => handleDeleteSession(s.id, e)}
+                                    className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                    title="Delete session"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {state === 'CREATED' && (
                 <div className="text-center py-12">
                     <h3 className="text-2xl font-bold mb-4">Waiting for Peer...</h3>
@@ -379,6 +492,21 @@ export function MatchingSession({ events }: Props) {
 
             {state === 'RESULTS' && (
                 <div className="space-y-6">
+                    <div className="flex items-center justify-between mb-8">
+                        <button
+                            onClick={() => {
+                                setState('IDLE');
+                                setMatches([]);
+                                setNotes({});
+                                setSessionId('');
+                                setRole(null);
+                            }}
+                            className="flex items-center gap-2 text-sm text-zinc-400 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-zinc-800"
+                        >
+                            <ArrowLeft className="w-4 h-4" /> Back to History
+                        </button>
+                    </div>
+                    
                     <h3 className="text-2xl font-bold text-center">
                         Found {matches.length} Mutual Events
                     </h3>
@@ -395,13 +523,33 @@ export function MatchingSession({ events }: Props) {
                                             <p className="text-xs text-zinc-500 mt-1">{event.location}</p>
                                         )}
                                     </div>
-                                    <button
-                                        onClick={() => setActiveNoteId(activeNoteId === event.uid ? null : event.uid)}
-                                        className="p-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 transition-colors"
-                                        title={notes[event.uid] ? "View/edit note" : "Add note"}
-                                    >
-                                        <MessageSquare className={`w-4 h-4 ${notes[event.uid] ? 'text-green-400 fill-green-400' : ''}`} />
-                                    </button>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => {
+                                                if (activePrivateNoteId === event.uid) {
+                                                    setActivePrivateNoteId(null);
+                                                } else {
+                                                    setActivePrivateNoteId(event.uid);
+                                                    setPrivateNoteText(event.googleEventId && privateNotes[event.googleEventId] ? privateNotes[event.googleEventId] : '');
+                                                }
+                                                setActiveNoteId(null);
+                                            }}
+                                            className="p-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 transition-colors"
+                                            title="Add private Google note"
+                                        >
+                                            <Lock className={`w-4 h-4 ${event.googleEventId && privateNotes[event.googleEventId] ? 'text-amber-400 fill-amber-400' : ''}`} />
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setActiveNoteId(activeNoteId === event.uid ? null : event.uid);
+                                                setActivePrivateNoteId(null);
+                                            }}
+                                            className="p-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 transition-colors"
+                                            title={notes[event.uid] ? "View/edit peer note" : "Add peer note"}
+                                        >
+                                            <MessageSquare className={`w-4 h-4 ${notes[event.uid] ? 'text-green-400 fill-green-400' : ''}`} />
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* Notes Section */}
@@ -418,7 +566,7 @@ export function MatchingSession({ events }: Props) {
                                             <div className="flex gap-2">
                                                 <input
                                                     type="text"
-                                                    placeholder="Add an encrypted note..."
+                                                    placeholder="Add an encrypted note for your peer..."
                                                     value={noteText}
                                                     onChange={(e) => setNoteText(e.target.value)}
                                                     className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none"
@@ -428,6 +576,40 @@ export function MatchingSession({ events }: Props) {
                                                     className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-bold hover:bg-primary/90"
                                                 >
                                                     Send
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Google Calendar Private Notes Section */}
+                                {(activePrivateNoteId === event.uid || (event.googleEventId && privateNotes[event.googleEventId])) && (
+                                    <div className="pt-4 border-t border-zinc-700/50">
+                                        {event.googleEventId && privateNotes[event.googleEventId] && activePrivateNoteId !== event.uid && (
+                                            <div className="mb-3 p-3 bg-amber-500/10 rounded-lg border border-amber-500/30 text-sm">
+                                                <span className="text-xs text-amber-500/70 block mb-1 flex items-center gap-1">
+                                                    <Lock className="w-3 h-3" /> Private Google Note:
+                                                </span>
+                                                <span className="text-amber-100">{privateNotes[event.googleEventId]}</span>
+                                            </div>
+                                        )}
+
+                                        {activePrivateNoteId === event.uid && event.googleEventId && (
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Add a private note to this event in Google Calendar..."
+                                                    value={privateNoteText}
+                                                    onChange={(e) => setPrivateNoteText(e.target.value)}
+                                                    className="flex-1 bg-zinc-900 border border-amber-500/50 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                                                    disabled={savingNoteId === event.googleEventId}
+                                                />
+                                                <button
+                                                    onClick={() => handleSavePrivateNote(event.googleEventId!)}
+                                                    disabled={savingNoteId === event.googleEventId}
+                                                    className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-bold hover:bg-amber-600 disabled:opacity-50 flex items-center"
+                                                >
+                                                    {savingNoteId === event.googleEventId ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save'}
                                                 </button>
                                             </div>
                                         )}
