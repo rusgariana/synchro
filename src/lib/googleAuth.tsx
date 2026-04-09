@@ -202,6 +202,7 @@ export function GoogleAuthProvider({ children }: { children: ReactNode }) {
         const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
         if (!clientId) {
             console.error('Google Client ID is missing');
+            alert('Debug: Google Client ID is missing in Vercel. Please check Project Settings > Environment Variables.');
             setIsLoading(false);
             return;
         }
