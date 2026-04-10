@@ -380,10 +380,10 @@ export default function Home() {
             )}
 
             {/* Main Content */}
-            <div className={`w-full max-w-5xl flex flex-col items-center gap-12 z-0`}>
+            <div className={`w-full max-w-5xl flex flex-col items-center gap-6 z-0`}>
                 {!isLoggedIn ? (
-                    <div className="text-center space-y-6 -mt-16 sm:-mt-20">
-                        <div className="relative inline-block mb-10">
+                    <div className="text-center space-y-4 -mt-16 sm:-mt-24">
+                        <div className="relative inline-block mb-4">
                             <div className="absolute inset-0 bg-primary/20 blur-[80px] rounded-full scale-[1.5] z-0" />
                             <img
                                 src="/logo_transparent.png"
@@ -391,15 +391,18 @@ export default function Home() {
                                 className="relative w-64 h-64 mx-auto animate-in zoom-in-95 duration-700 z-10 opacity-90"
                             />
                         </div>
-                        <h1 className="text-6xl sm:text-7xl font-bold tracking-tighter leading-[1.1] animate-in fade-in slide-in-from-top-12 duration-1000">
-                            <span className="text-white">Sync Calendars</span><br />
-                            <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-300 via-primary to-accent drop-shadow-[0_0_30px_rgba(139,92,246,0.2)]">Keep Privacy</span>
-                        </h1>
-                        <p className="text-lg sm:text-xl text-zinc-400 max-w-2xl mx-auto pt-4 font-light tracking-widest italic opacity-70 animate-in fade-in duration-1000 delay-300">
-                            Discover overlapping events with peers without exposing your personal data
-                        </p>
+                        
+                        <div className="pt-0">
+                            <h1 className="text-5xl sm:text-6xl font-bold tracking-tighter leading-[1] animate-in fade-in slide-in-from-top-12 duration-1000">
+                                <span className="text-white">Sync Calendars</span><br />
+                                <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-300 via-primary to-accent drop-shadow-[0_0_30px_rgba(139,92,246,0.2)]">Keep Privacy</span>
+                            </h1>
+                            <p className="text-base sm:text-lg text-zinc-400 max-w-2xl mx-auto pt-3 font-light tracking-widest italic opacity-70 animate-in fade-in duration-1000 delay-300">
+                                Discover overlapping events with peers without exposing your personal data
+                            </p>
+                        </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl mx-auto mt-20 text-center animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-500">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-5xl mx-auto mt-10 text-center animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-500">
                             {/* Sync Card */}
                             <div className="relative group transition-all duration-500 hover:-translate-y-2">
                                 <div className="absolute -inset-1 bg-gradient-to-r from-purple-500/40 via-primary/40 to-accent/40 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition duration-700 -z-10" />
