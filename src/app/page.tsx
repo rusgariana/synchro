@@ -391,26 +391,46 @@ export default function Home() {
                                 className="relative w-64 h-64 mx-auto animate-in zoom-in-95 duration-700 z-10"
                             />
                         </div>
-                        <h1 className="text-6xl sm:text-7xl font-bold tracking-tight leading-[1.1]">
+                        <h1 className="text-6xl sm:text-7xl font-bold tracking-tighter leading-[1] mb-6 animate-in fade-in slide-in-from-top-12 duration-1000">
                             <span className="text-white">Sync Calendars</span><br />
-                            <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-300 via-primary to-accent">Keep Privacy</span>
+                            <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-300 via-primary to-accent drop-shadow-[0_0_30px_rgba(139,92,246,0.3)]">Keep Privacy.</span>
                         </h1>
-                        <p className="text-lg text-zinc-400 max-w-lg mx-auto pt-2 font-light italic">
+                        <p className="text-lg sm:text-xl text-zinc-400 max-w-2xl mx-auto pt-2 font-light tracking-wide italic opacity-80 animate-in fade-in duration-1000 delay-300">
                             Discover overlapping events with peers without exposing your personal data
                         </p>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-2xl mx-auto mt-8 text-sm text-zinc-500 text-left">
-                            <div className="p-4 rounded-lg bg-zinc-900/30 border border-zinc-800">
-                                <strong className="text-zinc-300 block mb-1">Sync</strong>
-                                Link your Luma feed securely using zero-database connection to automatically fetch your confirmed events.
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-5xl mx-auto mt-12 text-sm text-zinc-500 text-left animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-500">
+                            <div className="group p-6 rounded-2xl bg-zinc-900/40 border border-zinc-800/50 backdrop-blur-md transition-all duration-300 hover:border-primary/50 hover:bg-zinc-900/60 hover:shadow-[0_0_40px_-10px_rgba(139,92,246,0.2)] hover:-translate-y-1 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-full blur-2xl -mr-8 -mt-8 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4 text-primary group-hover:scale-110 transition-transform">
+                                    <RefreshCw className="w-5 h-5" />
+                                </div>
+                                <strong className="text-white text-base block mb-2 font-bold group-hover:text-primary transition-colors">Sync</strong>
+                                <p className="text-zinc-400 leading-relaxed font-light">
+                                    Link your Luma securely with zero-database sync to automatically fetch your confirmed events.
+                                </p>
                             </div>
-                            <div className="p-4 rounded-lg bg-zinc-900/30 border border-zinc-800">
-                                <strong className="text-zinc-300 block mb-1">Match</strong>
-                                Identify shared events with true blind matching via a private handshake that reveals nothing but your mutual plans.
+
+                            <div className="group p-6 rounded-2xl bg-zinc-900/40 border border-zinc-800/50 backdrop-blur-md transition-all duration-300 hover:border-accent/50 hover:bg-zinc-900/60 hover:shadow-[0_0_40px_-10px_rgba(236,72,153,0.2)] hover:-translate-y-1 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-24 h-24 bg-accent/5 rounded-full blur-2xl -mr-8 -mt-8 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                                <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center mb-4 text-accent group-hover:scale-110 transition-transform">
+                                    <ShieldCheck className="w-5 h-5" />
+                                </div>
+                                <strong className="text-white text-base block mb-2 font-bold group-hover:text-accent transition-colors">Match</strong>
+                                <p className="text-zinc-400 leading-relaxed font-light">
+                                    Identify shared events with true blind matching that reveals nothing but your mutual plans.
+                                </p>
                             </div>
-                            <div className="p-4 rounded-lg bg-zinc-900/30 border border-zinc-800">
-                                <strong className="text-zinc-300 block mb-1">Meet</strong>
-                                Schedule meetings in one click, create private notes, export to your calendar.
+
+                            <div className="group p-6 rounded-2xl bg-zinc-900/40 border border-zinc-800/50 backdrop-blur-md transition-all duration-300 hover:border-zinc-600/50 hover:bg-zinc-900/60 hover:shadow-[0_0_40px_-10px_rgba(255,255,255,0.05)] hover:-translate-y-1 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full blur-2xl -mr-8 -mt-8 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                                <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center mb-4 text-zinc-400 group-hover:scale-110 group-hover:text-white transition-all">
+                                    <ArrowRight className="w-5 h-5" />
+                                </div>
+                                <strong className="text-white text-base block mb-2 font-bold group-hover:text-zinc-300 transition-colors">Meet</strong>
+                                <p className="text-zinc-400 leading-relaxed font-light">
+                                    Schedule meetings in one click, create private notes, and export to your calendar.
+                                </p>
                             </div>
                         </div>
 
