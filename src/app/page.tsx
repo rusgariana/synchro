@@ -344,22 +344,12 @@ export default function Home() {
         <main className="flex min-h-screen flex-col items-center px-8 pt-0 pb-0 relative overflow-hidden bg-background text-foreground">
             {/* Header */}
             <div className="z-10 w-full flex items-center justify-between font-mono text-sm mb-0 py-4 px-4 sm:px-8">
-                <div className="flex flex-col items-center justify-center mt-2">
-                    <div className="relative w-32 h-8 opacity-90 hover:opacity-100 transition-opacity">
-                        <div 
-                            className="absolute inset-0 bg-gradient-to-r from-purple-300 via-primary to-accent"
-                            style={{
-                                maskImage: 'url(/branding_text.png)',
-                                WebkitMaskImage: 'url(/branding_text.png)',
-                                maskSize: 'contain',
-                                WebkitMaskSize: 'contain',
-                                maskPosition: 'center left',
-                                WebkitMaskPosition: 'center left',
-                                maskRepeat: 'no-repeat',
-                                WebkitMaskRepeat: 'no-repeat',
-                            }}
-                        />
-                    </div>
+                <div className="flex flex-col items-center justify-center">
+                    <img 
+                        src="/branding_text.png" 
+                        alt="Synchro" 
+                        className="w-32 opacity-90 hover:opacity-100 transition-opacity mt-2 object-contain" 
+                    />
                 </div>
 
                 <div className="flex items-center justify-end">
