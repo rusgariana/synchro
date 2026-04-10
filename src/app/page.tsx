@@ -213,18 +213,27 @@ export default function Home() {
         }
     }, []);
 
-    // Only reset to 'Match' on a fresh LOGIN (null → user), NOT on refresh
-    // Using a ref to track previous user value so we can detect the transition
+    // Only reset to 'Match' on a genuine fresh LOGIN, NOT on page refresh.
+    // sessionStorage persists within a browser session (same tab) but clears on tab close.
+    // So: first time user logs in (no flag) → go to Match and set flag.
+    // Subsequent refreshes in same session (flag exists) → preserve saved tab from localStorage.
     const prevUserRef = useRef<typeof user>(undefined);
     useEffect(() => {
-        const wasLoggedOut = !prevUserRef.current;
+        const wasLoggedOut = prevUserRef.current === null; // strictly null, not undefined
         const isNowLoggedIn = !!user;
-        if (wasLoggedOut && isNowLoggedIn && prevUserRef.current !== undefined) {
-            // Genuine login transition — reset to Match tab
-            setActiveTabState('match');
-            localStorage.setItem('synchro_activeTab', 'match');
+        if (wasLoggedOut && isNowLoggedIn) {
+            // This is a genuine login transition — check if this is a new session
+            const alreadyLanded = sessionStorage.getItem('synchro_tab_landed');
+            if (!alreadyLanded) {
+                setActiveTabState('match');
+                localStorage.setItem('synchro_activeTab', 'match');
+                sessionStorage.setItem('synchro_tab_landed', '1');
+            }
         }
-        prevUserRef.current = user;
+        if (user === null || user) {
+            // Only update ref once we have a definitive value (not undefined/loading)
+            prevUserRef.current = user;
+        }
     }, [user]);
 
     const setActiveTab = (tab: 'match' | 'schedule' | 'history') => {

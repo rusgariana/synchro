@@ -69,9 +69,10 @@ export async function GET(req: Request) {
     const verifiedEvents = await Promise.all(
       rawEvents.map(async (event) => {
         try {
-          // Extract the personalized Luma ticket link (which contains the ?pk=g-... passkey)
+          // Prefer the personalized ?pk= ticket URL — it contains guest-specific RSVP data.
+          // If there is no ?pk= link (e.g. hosted events), fall back to the raw event URL.
           const pkMatch = event.description?.match(/https?:\/\/(?:lu\.ma|luma\.com)\/[^\s\\]+\?pk=[A-Za-z0-9\-_]+/i);
-          const ticketUrl = pkMatch ? pkMatch[0] : null;
+          const ticketUrl = pkMatch ? pkMatch[0] : (event.url || null);
 
           if (!ticketUrl) return null;
 
@@ -116,16 +117,18 @@ export async function GET(req: Request) {
           // Pending invites have approval_status="invited" with event_tickets=[].
           const hasTicket = /"event_tickets":\[\{/.test(html);
 
-          // Hosts and organizers get a management view — they don't have a standard guest
-          // ticket entry, but their page contains host-specific signals.
+          // Hosts and organizers see a management view — no guest ticket entry.
+          // Detect host status via signals Luma embeds in its __NEXT_DATA__ payload.
           const isHost = /"is_host":\s*true/i.test(html) ||
                          /"role":\s*"host"/i.test(html) ||
                          /"role":\s*"organizer"/i.test(html) ||
                          /"host_status"/i.test(html);
 
+          console.log(`[Synchro] Event: "${event.title}" | pk: ${!!pkMatch} | status: ${status} | hasTicket: ${hasTicket} | isHost: ${isHost}`);
+
           // Accept the event if:
-          // 1. Approved guest with a ticket, OR
-          // 2. Identified as a host/organizer (treat hosting as attending for IRL events)
+          // 1. Approved guest with a confirmed ticket, OR
+          // 2. Identified as host/organizer (treat hosting an IRL event as attending)
           if ((status === 'approved' && hasTicket) || isHost) {
             return event;
           }
