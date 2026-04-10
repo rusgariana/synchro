@@ -341,29 +341,15 @@ export default function Home() {
     const isLoggedIn = mounted && !!user;
 
     return (
-        <main className="flex min-h-screen flex-col items-center px-8 pt-0 pb-6 relative overflow-hidden bg-background text-foreground">
+        <main className="flex min-h-screen flex-col items-center px-8 pt-0 pb-0 relative overflow-hidden bg-background text-foreground">
             {/* Header */}
             <div className="z-10 w-full flex items-center justify-between font-mono text-sm mb-0 py-4 px-4 sm:px-8">
-                <div className="flex items-center">
-                    <div className="relative h-6 w-[170px] overflow-hidden opacity-90 hover:opacity-100 transition-opacity mt-2">
-                        <div
-                            className="absolute bg-gradient-to-r from-[#c084fc] to-[#3b82f6]"
-                            style={{
-                                width: '471px',
-                                height: '57px',
-                                transform: 'scale(0.25)',
-                                transformOrigin: 'top left',
-                                maskImage: 'url(/logo_transparent.png)',
-                                WebkitMaskImage: 'url(/logo_transparent.png)',
-                                maskPosition: '-278px -613px',
-                                WebkitMaskPosition: '-278px -613px',
-                                maskRepeat: 'no-repeat',
-                                WebkitMaskRepeat: 'no-repeat',
-                                maskSize: '1024px 1024px',
-                                WebkitMaskSize: '1024px 1024px'
-                            }}
-                        />
-                    </div>
+                <div className="flex flex-col items-center justify-center">
+                    <img 
+                        src="/branding_text.png" 
+                        alt="Synchro" 
+                        className="w-32 opacity-90 hover:opacity-100 transition-opacity mt-2 object-contain" 
+                    />
                 </div>
 
                 <div className="flex items-center justify-end">
@@ -380,10 +366,10 @@ export default function Home() {
             )}
 
             {/* Main Content */}
-            <div className={`w-full max-w-5xl flex flex-col items-center gap-12 z-0`}>
+            <div className={`w-full max-w-5xl flex flex-col items-center gap-6 z-0`}>
                 {!isLoggedIn ? (
                     <div className="text-center space-y-6 -mt-8 sm:-mt-12">
-                        <div className="relative inline-block mb-4">
+                        <div className="relative inline-block mb-0">
                             <div className="absolute inset-0 bg-primary/20 blur-[80px] rounded-full scale-[1.5] z-0" />
                             <img
                                 src="/logo_transparent.png"
@@ -400,7 +386,7 @@ export default function Home() {
                         </div>
 
                         <div className="pt-4"> {/* Breathing space before cards section */}
-                            <p className="text-base sm:text-lg text-zinc-400 max-w-2xl mx-auto mb-6 font-light tracking-widest italic opacity-70 animate-in fade-in duration-1000 delay-300">
+                            <p className="text-base sm:text-lg text-zinc-400 max-w-2xl mx-auto mb-10 font-light tracking-widest italic opacity-70 animate-in fade-in duration-1000 delay-300">
                                 Discover overlapping events with peers without exposing your personal data
                             </p>
                             
