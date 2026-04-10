@@ -586,28 +586,27 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                 <div className="grid md:grid-cols-2 gap-6 p-2">
                     <button
                         onClick={createSession}
-                        className="flex flex-col items-center justify-center p-12 py-16 rounded-3xl bg-zinc-800/40 hover:bg-zinc-800 border border-zinc-700/50 hover:border-primary/50 group text-center transition-all shadow-xl hover:shadow-primary/20 backdrop-blur-md"
+                        className="flex flex-col items-center justify-center p-8 min-h-[200px] rounded-3xl bg-zinc-800/40 hover:bg-zinc-800 border border-zinc-700/50 hover:border-primary/50 group text-center transition-all shadow-xl hover:shadow-primary/20 backdrop-blur-md"
                     >
-                        <h3 className="text-2xl font-bold mb-3 group-hover:text-primary transition-colors">Start Room</h3>
+                        <h3 className="text-2xl font-bold mb-4 group-hover:text-primary transition-colors">Start Room</h3>
                         <p className="text-sm text-zinc-400 font-medium">Host a new secure matching room</p>
                     </button>
 
-                    <div className="flex flex-col items-center justify-center p-12 py-16 rounded-3xl bg-zinc-800/40 border border-zinc-700/50 text-center shadow-xl backdrop-blur-md relative overflow-hidden">
-                        <h3 className="text-2xl font-bold mb-3 z-10">Join Room</h3>
-                        <p className="text-sm text-transparent select-none font-medium mb-3">Placeholder</p>
-                        <div className="absolute bottom-16 inset-x-12 z-10">
-                            <div className="flex items-center gap-2 w-full">
+                    <div className="flex flex-col items-center justify-center p-8 min-h-[200px] rounded-3xl bg-zinc-800/40 border border-zinc-700/50 text-center shadow-xl backdrop-blur-md">
+                        <h3 className="text-2xl font-bold mb-4">Join Room</h3>
+                        <div className="w-full max-w-[280px]">
+                            <div className="flex items-center gap-2 justify-center w-full">
                                 <input
                                     type="text"
                                     placeholder="Enter Code"
                                     value={inputSessionId}
                                     onChange={(e) => setInputSessionId(e.target.value)}
-                                    className="flex-1 min-w-0 bg-zinc-900 border border-zinc-600 rounded-lg px-3 py-2 focus:ring-2 focus:ring-accent/50 outline-none text-center text-sm"
+                                    className="flex-1 min-w-0 bg-zinc-900 border border-zinc-600 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-accent/50 outline-none text-center text-sm"
                                 />
                                 <button
                                     onClick={joinSession}
                                     disabled={!inputSessionId}
-                                    className="bg-accent hover:bg-accent/90 text-white font-bold py-2 px-4 text-sm rounded-lg disabled:opacity-50 whitespace-nowrap"
+                                    className="bg-accent hover:bg-accent/90 text-white font-bold py-2.5 px-5 text-sm rounded-lg disabled:opacity-50 whitespace-nowrap transition-colors"
                                 >
                                     Join
                                 </button>
