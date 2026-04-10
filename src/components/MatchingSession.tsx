@@ -287,8 +287,10 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                     }));
                 }
                 if (msg.type === 'PROPOSAL_ACCEPT') {
-                    const { uid } = msg.payload;
+                    const { uid, acceptorName } = msg.payload;
                     // Peer accepted our proposal — create the event on our calendar
+                    // Use acceptorName from the signal payload to avoid stale closure issue
+                    const resolvedPeerName = acceptorName || peerName || 'Peer';
                     setProposals(prev => ({
                         ...prev,
                         [uid]: { ...prev[uid], status: 'accepted' }
@@ -296,7 +298,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                     // Find the event and create it in our calendar
                     const event = matches.find(e => e.uid === uid);
                     if (event && accessToken) {
-                        createGoogleCalendarEvent(accessToken, event, `🤝 Meeting ${peerName || 'Peer'} <i>via Synchro</i>`)
+                        createGoogleCalendarEvent(accessToken, event, `🤝 Meeting ${resolvedPeerName} <i>via Synchro</i>`)
                             .then(gId => {
                                 setProposals(prev => ({
                                     ...prev,
@@ -514,8 +516,8 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
     const handleAccept = async (event: CalendarEvent) => {
         // Update local state immediately
         setProposals(prev => ({ ...prev, [event.uid]: { ...prev[event.uid], status: 'accepted' } }));
-        // Signal the proposer
-        await sendMessage('PROPOSAL_ACCEPT', { uid: event.uid });
+        // Signal the proposer — include our name so they can use it in the calendar event title
+        await sendMessage('PROPOSAL_ACCEPT', { uid: event.uid, acceptorName: userName });
         // Create on our own calendar
         if (accessToken) {
             try {
@@ -910,7 +912,8 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                                     const p = proposals[event.uid];
                                     const status: ProposalStatus = p?.status ?? 'none';
                                     const isMeProposer = p?.proposedBy === 'me';
-                                    const canPropose = status === 'none' || status === 'rejected_by_me';
+                                    // Allow re-proposing after any rejection — peer said no, you can try a different time
+                                    const canPropose = status === 'none' || status === 'rejected_by_me' || status === 'rejected_by_peer' || status === 'cancelled';
                                     const canAccept = status === 'proposed' && !isMeProposer;
                                     const canReject = status === 'proposed' && !isMeProposer;
                                     const canCancel = (status === 'proposed' && isMeProposer) || status === 'accepted';

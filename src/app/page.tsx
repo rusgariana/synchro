@@ -203,6 +203,14 @@ export default function Home() {
         }
     }, []);
 
+    // Always land on 'Match' tab when a user logs in fresh
+    useEffect(() => {
+        if (user) {
+            setActiveTabState('match');
+            localStorage.setItem('synchro_activeTab', 'match');
+        }
+    }, [user]);
+
     const setActiveTab = (tab: 'match' | 'schedule' | 'history') => {
         setActiveTabState(tab);
         localStorage.setItem('synchro_activeTab', tab);
@@ -582,13 +590,13 @@ export default function Home() {
                             </div>
                         ) : (
                             <div className="w-full flex flex-col gap-6 items-center animate-in fade-in zoom-in-95 duration-500">
-                                <div className="w-full flex justify-start">
-                                    <nav className="flex items-center gap-1 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800">
+                                <div className="w-full flex justify-start overflow-x-auto">
+                                    <nav className="flex items-center gap-1 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800 flex-nowrap min-w-max">
                                         {(['match', 'schedule', 'history'] as const).map(tab => (
                                             <button
                                                 key={tab}
                                                 onClick={() => setActiveTab(tab)}
-                                                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === tab ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'}`}
+                                                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'}`}
                                             >
                                                 {tab === 'match' ? 'Match' : tab === 'schedule' ? 'My Events' : 'History'}
                                             </button>
