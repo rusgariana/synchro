@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { GoogleSignIn } from '@/components/GoogleSignIn';
 import { MatchingSession } from '@/components/MatchingSession';
 import { CalendarEvent } from '@/lib/calendar';
@@ -213,12 +213,18 @@ export default function Home() {
         }
     }, []);
 
-    // Always land on 'Match' tab when a user logs in fresh
+    // Only reset to 'Match' on a fresh LOGIN (null → user), NOT on refresh
+    // Using a ref to track previous user value so we can detect the transition
+    const prevUserRef = useRef<typeof user>(undefined);
     useEffect(() => {
-        if (user) {
+        const wasLoggedOut = !prevUserRef.current;
+        const isNowLoggedIn = !!user;
+        if (wasLoggedOut && isNowLoggedIn && prevUserRef.current !== undefined) {
+            // Genuine login transition — reset to Match tab
             setActiveTabState('match');
             localStorage.setItem('synchro_activeTab', 'match');
         }
+        prevUserRef.current = user;
     }, [user]);
 
     const setActiveTab = (tab: 'match' | 'schedule' | 'history') => {

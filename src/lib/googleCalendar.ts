@@ -66,16 +66,17 @@ export async function savePrivateNote(
     const currentDesc = event.description || '';
     
     // 2. Safely replace or append the Synchro Note section
-    const separator = '\n\n-------------------------------\n\n';
+    const separator = '\n\n-------------------------------\n';
+    const noteHeader = '🟣 Private Note via Synchro\n';
     let newDesc = currentDesc;
     
     if (currentDesc.includes('-------------------------------')) {
         // Strip out the old notes section and replace it
         newDesc = currentDesc.split('-------------------------------')[0].trimEnd();
-        if (note) newDesc += separator + note;
+        if (note) newDesc += separator + noteHeader + note;
     } else if (note) {
         // Append new notes section
-        newDesc += separator + note;
+        newDesc += separator + noteHeader + note;
     }
 
     // 3. Patch the new description and extendedProperties

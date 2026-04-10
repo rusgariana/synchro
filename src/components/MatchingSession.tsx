@@ -133,8 +133,21 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                 if (googleSessions.length > 0) {
                     const merged = [...local];
                     googleSessions.forEach(gs => {
-                        if (!merged.find(s => s.id === gs.id)) {
+                        const localIdx = merged.findIndex(s => s.id === gs.id);
+                        if (localIdx === -1) {
                             merged.push(gs);
+                        } else {
+                            // Local wins for proposal status to prevent remote stale data
+                            // overwriting a locally-confirmed cancellation
+                            const localSession = merged[localIdx];
+                            const mergedProposals = { ...gs.proposals };
+                            Object.keys(mergedProposals).forEach(uid => {
+                                const localStatus = localSession.proposals?.[uid]?.status;
+                                if (localStatus === 'cancelled' || localStatus === 'rejected_by_me') {
+                                    mergedProposals[uid] = localSession.proposals![uid];
+                                }
+                            });
+                            merged[localIdx] = { ...gs, proposals: mergedProposals, privateNotes: localSession.privateNotes || gs.privateNotes };
                         }
                     });
                     merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -146,7 +159,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
         }
     }, [accessToken]);
 
-    // Effect to auto-save current active session
+    // Effect to auto-save current active session - only when key session data changes, NOT on every privateNotes update
     useEffect(() => {
         if (state === 'RESULTS' && sessionId && role && matches.length > 0) {
             const newSession = {
@@ -168,7 +181,9 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                 saveGoogleSessionHistory(accessToken, updated.slice(0, 10));
             }
         }
-    }, [state, sessionId, role, matches, proposals, privateNotes, sessionLabel, accessToken]);
+    // Intentionally exclude privateNotes - private notes save is handled separately
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [state, sessionId, role, matches, proposals, sessionLabel, accessToken]);
 
     const loadSavedSession = (s: SavedSession) => {
         setSessionId(s.id);
@@ -360,6 +375,8 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
         return () => clearInterval(interval);
     }, [sessionId, handleMessages]);
 
+    const [duplicateWarning, setDuplicateWarning] = useState<{ label: string; session: SavedSession } | null>(null);
+
     const createSession = async () => {
         const res = await fetch('/api/signal', {
             method: 'POST',
@@ -376,6 +393,14 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
 
     const joinSession = async () => {
         if (!inputSessionId) return;
+
+        // Check for a recent session with the same code — duplicate guard
+        const existingById = savedSessions.find(s => s.id === inputSessionId);
+        if (existingById) {
+            setDuplicateWarning({ label: existingById.label || 'this peer', session: existingById });
+            return;
+        }
+
         const res = await fetch('/api/signal', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -585,6 +610,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                         <div className="text-zinc-600 text-xs">End the current session before starting a new one.</div>
                     </div>
                 ) : (
+                <>
                 <div className="grid md:grid-cols-2 gap-6 p-2">
                     <button
                         onClick={createSession}
@@ -602,7 +628,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                                     type="text"
                                     placeholder="Enter Code"
                                     value={inputSessionId}
-                                    onChange={(e) => setInputSessionId(e.target.value)}
+                                    onChange={(e) => { setInputSessionId(e.target.value); setDuplicateWarning(null); }}
                                     className="flex-1 min-w-0 bg-zinc-900 border border-zinc-600 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-accent/50 outline-none text-center text-sm"
                                 />
                                 <button
@@ -616,6 +642,19 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                         </div>
                     </div>
                 </div>
+
+                {duplicateWarning && (
+                    <div className="mt-4 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-300 flex items-center justify-between gap-3">
+                        <span>You already have a session with <strong>{duplicateWarning.label}</strong>. Open it instead?</span>
+                        <button
+                            onClick={() => { loadSavedSession(duplicateWarning.session); setDuplicateWarning(null); }}
+                            className="shrink-0 px-3 py-1.5 text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/40 rounded-lg transition-colors"
+                        >
+                            Open Session
+                        </button>
+                    </div>
+                )}
+                </>
                 )
             )}
 
