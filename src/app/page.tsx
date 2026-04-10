@@ -374,11 +374,11 @@ export default function Home() {
                 {!isLoggedIn ? (
                     <div className="text-center space-y-6 -mt-16 sm:-mt-24">
                         <div className="relative inline-block mb-0">
-                            <div className="absolute inset-0 bg-primary/20 blur-[80px] rounded-full scale-[1.5] z-0" />
+                            <div className="absolute inset-0 bg-primary/20 blur-[80px] rounded-full scale-[1.5] z-0 translate-y-8" />
                             <img
                                 src="/logo_transparent.png"
                                 alt="Synchro Logo"
-                                className="relative w-64 h-64 mx-auto animate-in zoom-in-95 duration-700 z-10 opacity-90"
+                                className="relative w-48 h-48 md:w-56 md:h-56 mx-auto animate-in zoom-in-95 duration-700 z-10 opacity-90 translate-y-8"
                             />
                         </div>
                         
