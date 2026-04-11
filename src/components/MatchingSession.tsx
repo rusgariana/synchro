@@ -193,6 +193,30 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
         setPrivateNotes(s.privateNotes || {});
         setSessionLabel(s.label || '');
         setState('RESULTS');
+
+        // Populate exportedEvents from saved proposals so GCal export state is restored
+        const exported: Record<string, string> = {};
+        Object.entries(s.proposals || {}).forEach(([uid, p]) => {
+            if ((p as any).googleEventId) exported[uid] = (p as any).googleEventId;
+        });
+        setExportedEvents(exported);
+
+        // Async: fetch private notes from GCal for each exported event
+        if (accessToken && Object.keys(exported).length > 0) {
+            Object.entries(exported).forEach(async ([uid, gId]) => {
+                try {
+                    const res = await fetch(
+                        `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(gId)}`,
+                        { headers: { Authorization: `Bearer ${accessToken}` } }
+                    );
+                    if (res.ok) {
+                        const ev = await res.json();
+                        const note = ev.extendedProperties?.private?.synchro_note;
+                        if (note) setPrivateNotes(prev => ({ ...prev, [uid]: note }));
+                    }
+                } catch { /* silent */ }
+            });
+        }
     };
 
     const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
@@ -385,6 +409,20 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
     }, [sessionId, handleMessages]);
 
     const [duplicateWarning, setDuplicateWarning] = useState<{ label: string; session: SavedSession } | null>(null);
+
+    // When a live match result arrives, check if we already have a session with this peer
+    useEffect(() => {
+        if (state === 'RESULTS' && peerName && viewMode !== 'HISTORY') {
+            const existing = savedSessions.find(s =>
+                s.id !== sessionId &&
+                (s.label || '').toLowerCase().includes(peerName.toLowerCase())
+            );
+            if (existing) {
+                setDuplicateWarning({ label: peerName, session: existing });
+            }
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [state, peerName]);
 
     const createSession = async () => {
         const res = await fetch('/api/signal', {
@@ -833,6 +871,20 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                     <div className="flex items-center justify-between mt-8 mb-4">
                         <div className="text-sm font-bold text-zinc-400 uppercase tracking-widest">{matches.length} Matches Found</div>
                     </div>
+
+                    {/* Duplicate peer warning — shown when a session with this peer already exists */}
+                    {duplicateWarning && viewMode !== 'HISTORY' && (
+                        <div className="mb-4 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-300 flex items-center justify-between gap-3">
+                            <span>You already have a saved session with <strong>{duplicateWarning.label}</strong>.</span>
+                            <button
+                                onClick={() => { loadSavedSession(duplicateWarning.session); setDuplicateWarning(null); }}
+                                className="shrink-0 px-3 py-1.5 text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/40 rounded-lg transition-colors"
+                            >
+                                Open Existing
+                            </button>
+                        </div>
+                    )}
+
                     <div className="grid gap-4">
                         {displayMode === 'list' ? matches.map(event => (
                             <div

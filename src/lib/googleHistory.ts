@@ -45,12 +45,24 @@ export async function saveGoogleSessionHistory(accessToken: string, history: Sav
     const searchData = await searchRes.json();
     const existingEvent = searchData.items?.find((item: any) => item.extendedProperties?.private?.synchro_history);
 
-    const historyStr = JSON.stringify(history);
-    
-    // Limits: Google Calendar private properties have a 1024 char limit per key.
-    // If the history is too large, we might need multiple keys or a different approach.
-    // For now, we'll store it and hope it's under 1KB (approx 10-15 sessions).
-    
+    // Strip heavy fields (event descriptions, etc.) before storing to GCal.
+    // GCal extended properties have a hard 1024-byte limit per key.
+    // Full Luma descriptions easily exceed this, causing silent truncation/corruption.
+    // Lightweight fields are sufficient for cross-browser restoration.
+    const minimalHistory = history.map(s => ({
+      ...s,
+      matches: (s.matches || []).map(m => ({
+        uid: m.uid,
+        title: m.title,
+        start: m.start,
+        end: m.end,
+        location: m.location,
+        url: m.url,
+        // description intentionally omitted — too large
+      })),
+    }));
+    const historyStr = JSON.stringify(minimalHistory);
+
     if (existingEvent) {
       // Update existing
       await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${existingEvent.id}`, {
