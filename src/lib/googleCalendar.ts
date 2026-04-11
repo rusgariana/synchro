@@ -133,6 +133,28 @@ export async function createGoogleCalendarEvent(
 ): Promise<string> {
     // 1. PRE-FLIGHT CHECK: Avoid duplicating events that already exist on the user's calendar
     // (e.g. via automatic Gmail parsing or native Luma calendar subscription)
+
+    // 1a. Search by iCalUID first — most reliable match
+    try {
+        const uidUrl = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
+        uidUrl.searchParams.set('iCalUID', event.uid);
+        uidUrl.searchParams.set('singleEvents', 'true');
+        const uidRes = await fetch(uidUrl.toString(), {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        if (uidRes.ok) {
+            const uidData = await uidRes.json();
+            const existing = uidData.items?.[0];
+            if (existing) {
+                if (note) await savePrivateNote(accessToken, existing.id, note);
+                return existing.id;
+            }
+        }
+    } catch (e) {
+        console.warn('iCalUID pre-flight failed, trying title search...', e);
+    }
+
+    // 1b. Fallback: search by title + time window
     const searchUrl = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
     searchUrl.searchParams.set('q', event.title);
     

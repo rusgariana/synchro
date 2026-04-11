@@ -94,23 +94,33 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
     };
 
     const handleSavePrivateNote = async (eventUid: string) => {
-        // Always save locally to state
-        setPrivateNotes(prev => ({ ...prev, [eventUid]: privateNoteText }));
+        const noteText = privateNoteText;
+        // Save locally and persist to the session in localStorage
+        setPrivateNotes(prev => {
+            const next = { ...prev, [eventUid]: noteText };
+            // Also update the saved session so note survives refresh
+            if (sessionId) {
+                const { getSavedSessions, saveSession } = require('@/lib/sessionStorage');
+                const sessions = getSavedSessions();
+                const idx = sessions.findIndex((s: any) => s.id === sessionId);
+                if (idx >= 0) {
+                    sessions[idx].privateNotes = next;
+                    saveSession(sessions[idx]);
+                }
+            }
+            return next;
+        });
         setActivePrivateNoteId(null);
-        
-        // If it's already exported to Google, update it there too
-        const googleEventId = exportedEvents[eventUid];
-        if (googleEventId) {
+
+        // Look for a GCal event ID from either exportedEvents or the proposal record
+        const googleEventId = exportedEvents[eventUid] || proposals[eventUid]?.googleEventId;
+        if (googleEventId && accessToken) {
             setSavingNoteId(eventUid);
             try {
-                await savePrivateNote(accessToken, googleEventId, privateNoteText);
+                await savePrivateNote(accessToken, googleEventId, noteText);
             } catch (e: any) {
                 console.error('Failed to update private note on Google Calendar', e);
-                if (e.message?.includes('401')) {
-                    expireSession();
-                } else {
-                    alert('Saved locally, but failed to sync to Google Calendar. popup blockers?');
-                }
+                if (e.message?.includes('401')) expireSession();
             } finally {
                 setSavingNoteId(null);
             }

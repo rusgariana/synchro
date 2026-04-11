@@ -8,29 +8,53 @@ import { useGoogleAuth } from '@/lib/googleAuth';
 import { fetchLumaEvents } from '@/lib/lumaEvents';
 import { fetchGoogleConfig, saveGoogleConfig } from '@/lib/googleHistory';
 import { createGoogleCalendarEvent, savePrivateNote } from '@/lib/googleCalendar';
-import { Loader2, Calendar, Link as LinkIcon, ArrowRight, ShieldCheck, RefreshCw, ChevronDown, ChevronUp, MapPin, ExternalLink, CalendarPlus, StickyNote, Check, Lock } from 'lucide-react';
+import { Loader2, Calendar, Link as LinkIcon, ArrowRight, ShieldCheck, RefreshCw, ChevronDown, ChevronUp, MapPin, ExternalLink, CalendarPlus, StickyNote, Check, Lock, Users } from 'lucide-react';
+import { getSavedSessions } from '@/lib/sessionStorage';
 
 function EventsList({ events, accessToken, onRefresh, isRefreshing }: { events: CalendarEvent[], accessToken?: string, onRefresh?: () => void, isRefreshing?: boolean }) {
     const [open, setOpen] = useState(true);
     const { expireSession } = useGoogleAuth();
 
-    // Export State
+    // Export State — persisted to localStorage so refresh doesn't lose the checkmark
     const [exportingEventId, setExportingEventId] = useState<string | null>(null);
-    const [exportedEvents, setExportedEvents] = useState<Record<string, string>>({}); // uid -> googleEventId
+    const [exportedEvents, setExportedEvents] = useState<Record<string, string>>(() => {
+        try { return JSON.parse(localStorage.getItem('synchro_my_exported') || '{}'); } catch { return {}; }
+    });
 
-    // Private Notes State
+    // Private Notes State — persisted to localStorage
     const [activePrivateNoteId, setActivePrivateNoteId] = useState<string | null>(null);
-    const [privateNotes, setPrivateNotes] = useState<Record<string, string>>({});
+    const [privateNotes, setPrivateNotes] = useState<Record<string, string>>(() => {
+        try { return JSON.parse(localStorage.getItem('synchro_my_notes') || '{}'); } catch { return {}; }
+    });
     const [privateNoteText, setPrivateNoteText] = useState('');
     const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
+
+    // Meeting-with data — read from saved history sessions
+    const savedSessions = getSavedSessions();
+    // Build a map: eventUid -> [peerName, ...]
+    const meetingWith: Record<string, string[]> = {};
+    for (const s of savedSessions) {
+        const peer = (s.label || '').replace(/^Synchro w\/ /i, '').trim();
+        if (!peer) continue;
+        for (const [uid, p] of Object.entries(s.proposals || {})) {
+            if (p.status === 'accepted') {
+                if (!meetingWith[uid]) meetingWith[uid] = [];
+                if (!meetingWith[uid].includes(peer)) meetingWith[uid].push(peer);
+            }
+        }
+    }
 
     const handleExportToGoogle = async (event: CalendarEvent) => {
         if (!accessToken) return alert('Please sign in to Google to export events.');
         setExportingEventId(event.uid);
         try {
-            const combinedNote = privateNotes[event.uid] ? `🟣 <b>PRIVATE NOTE</b> <i>via Synchro</i>\n${privateNotes[event.uid]}` : '';
+            const combinedNote = privateNotes[event.uid] || '';
             const gId = await createGoogleCalendarEvent(accessToken, event, combinedNote);
-            setExportedEvents(prev => ({ ...prev, [event.uid]: gId }));
+            setExportedEvents(prev => {
+                const next = { ...prev, [event.uid]: gId };
+                localStorage.setItem('synchro_my_exported', JSON.stringify(next));
+                return next;
+            });
         } catch (e: any) {
             console.error('Failed to export to Google Calendar', e);
             if (e.message.includes('401')) {
@@ -44,26 +68,29 @@ function EventsList({ events, accessToken, onRefresh, isRefreshing }: { events: 
     };
 
     const handleSavePrivateNote = async (eventUid: string) => {
-        setPrivateNotes(prev => ({ ...prev, [eventUid]: privateNoteText }));
+        const noteText = privateNoteText;
+        setPrivateNotes(prev => {
+            const next = { ...prev, [eventUid]: noteText };
+            localStorage.setItem('synchro_my_notes', JSON.stringify(next));
+            return next;
+        });
         setActivePrivateNoteId(null);
+        setPrivateNoteText('');
 
         const googleEventId = exportedEvents[eventUid];
         if (googleEventId && accessToken) {
             setSavingNoteId(eventUid);
             try {
-                await savePrivateNote(accessToken, googleEventId, privateNoteText);
+                await savePrivateNote(accessToken, googleEventId, noteText);
             } catch (e: any) {
                 console.error('Failed to update private note on Google Calendar', e);
                 if (e.message.includes('401')) {
                     expireSession();
-                } else {
-                    alert('Saved locally, but failed to sync to Google Calendar. popup blockers?');
                 }
             } finally {
                 setSavingNoteId(null);
             }
         }
-        setPrivateNoteText('');
     };
 
     return (
@@ -126,6 +153,12 @@ function EventsList({ events, accessToken, onRefresh, isRefreshing }: { events: 
                                     <p className="text-xs text-zinc-500 mt-1 flex items-center gap-1.5 break-words line-clamp-2 group-hover:text-zinc-400 transition-colors">
                                         <MapPin className="w-3.5 h-3.5 shrink-0" />
                                         {event.location}
+                                    </p>
+                                )}
+                                {meetingWith[event.uid] && meetingWith[event.uid].length > 0 && (
+                                    <p className="text-xs text-emerald-500/80 mt-1 flex items-center gap-1.5">
+                                        <Users className="w-3 h-3 shrink-0" />
+                                        Meeting: {meetingWith[event.uid].join(', ')}
                                     </p>
                                 )}
                             </div>
