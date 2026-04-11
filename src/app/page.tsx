@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { GoogleSignIn } from '@/components/GoogleSignIn';
 import { MatchingSession } from '@/components/MatchingSession';
 import { CalendarEvent } from '@/lib/calendar';
@@ -205,36 +205,22 @@ export default function Home() {
     // Tab state
     const [activeTab, setActiveTabState] = useState<'match' | 'schedule' | 'history'>('match');
 
-    // Lazy-init activeTab from localStorage after mount to avoid hydration mismatch
+    // On mount: if no session flag exists, land on Match tab.
+    // sessionStorage clears when the tab closes, so first load of a new session always lands on Match.
+    // Refreshes within the same session keep the tab from localStorage.
     useEffect(() => {
-        const savedTab = localStorage.getItem('synchro_activeTab');
-        if (savedTab === 'match' || savedTab === 'schedule' || savedTab === 'history') {
-            setActiveTabState(savedTab);
-        }
-    }, []);
-
-    // Only reset to 'Match' on a genuine fresh LOGIN, NOT on page refresh.
-    // sessionStorage persists within a browser session (same tab) but clears on tab close.
-    // So: first time user logs in (no flag) → go to Match and set flag.
-    // Subsequent refreshes in same session (flag exists) → preserve saved tab from localStorage.
-    const prevUserRef = useRef<typeof user>(undefined);
-    useEffect(() => {
-        const wasLoggedOut = prevUserRef.current === null; // strictly null, not undefined
-        const isNowLoggedIn = !!user;
-        if (wasLoggedOut && isNowLoggedIn) {
-            // This is a genuine login transition — check if this is a new session
-            const alreadyLanded = sessionStorage.getItem('synchro_tab_landed');
-            if (!alreadyLanded) {
-                setActiveTabState('match');
-                localStorage.setItem('synchro_activeTab', 'match');
-                sessionStorage.setItem('synchro_tab_landed', '1');
+        const alreadyLanded = sessionStorage.getItem('synchro_tab_landed');
+        if (!alreadyLanded) {
+            setActiveTabState('match');
+            localStorage.setItem('synchro_activeTab', 'match');
+            sessionStorage.setItem('synchro_tab_landed', '1');
+        } else {
+            const savedTab = localStorage.getItem('synchro_activeTab');
+            if (savedTab === 'match' || savedTab === 'schedule' || savedTab === 'history') {
+                setActiveTabState(savedTab);
             }
         }
-        if (user === null || user) {
-            // Only update ref once we have a definitive value (not undefined/loading)
-            prevUserRef.current = user;
-        }
-    }, [user]);
+    }, []);
 
     const setActiveTab = (tab: 'match' | 'schedule' | 'history') => {
         setActiveTabState(tab);
@@ -377,16 +363,14 @@ export default function Home() {
         <main className="flex min-h-screen flex-col items-center px-8 pt-0 pb-0 relative overflow-hidden bg-background text-foreground">
             {/* Header */}
             <div className="z-10 w-full flex items-center justify-between font-mono text-sm mb-0 py-4 px-4 sm:px-8 h-[72px]">
-                <div className="w-32 relative h-full flex items-center">
-                    <div className="absolute top-1/2 -translate-y-1/2 left-0 w-32 flex flex-col items-center justify-center group">
-                        <img 
-                            src="/branding_text.png" 
-                            alt="Synchro" 
-                            className="w-32 opacity-90 group-hover:opacity-100 transition-opacity object-contain relative z-10" 
-                        />
-                        {/* The magical multiply gradient overlay turns the white text into the gradient color while keeping black background pure black */}
-                        <div className="absolute inset-0 z-20 bg-gradient-to-r from-purple-300 via-primary to-accent mix-blend-multiply opacity-90 group-hover:opacity-100 transition-opacity pointer-events-none" />
-                    </div>
+                <div className="relative inline-flex items-center group">
+                    <img 
+                        src="/branding_text.png" 
+                        alt="Synchro" 
+                        className="h-6 w-auto opacity-90 group-hover:opacity-100 transition-opacity object-contain relative z-10" 
+                    />
+                    {/* Gradient colour overlay — multiply keeps the black bg transparent */}
+                    <div className="absolute inset-0 z-20 bg-gradient-to-r from-purple-300 via-primary to-accent mix-blend-multiply opacity-90 group-hover:opacity-100 transition-opacity pointer-events-none" />
                 </div>
 
                 <div className="flex items-center justify-end">
