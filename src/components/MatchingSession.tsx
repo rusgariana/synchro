@@ -962,12 +962,12 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                                     const p = proposals[event.uid];
                                     const status: ProposalStatus = p?.status ?? 'none';
                                     const isMeProposer = p?.proposedBy === 'me';
-                                    const isHistory = viewMode === 'HISTORY';
-                                    // Allow re-proposing after any rejection — peer said no, you can try a different time
+                                    // isHistory: true when viewing archived session (no live connection)
+                                    // A session loaded from History tab but live (has sessionId) stays interactive
+                                    const isHistory = viewMode === 'HISTORY' && !sessionId;
                                     const canPropose = !isHistory && (status === 'none' || status === 'rejected_by_me' || status === 'rejected_by_peer' || status === 'cancelled');
                                     const canAccept = !isHistory && status === 'proposed' && !isMeProposer;
                                     const canReject = !isHistory && status === 'proposed' && !isMeProposer;
-                                    // Cancel is always available for accepted events, even in History
                                     const canCancel = (status === 'proposed' && isMeProposer) || status === 'accepted';
                                     return (
                                         <div className="flex items-center gap-2 pt-2 border-t border-zinc-700/40" onClick={e => e.stopPropagation()}>

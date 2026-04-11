@@ -26,6 +26,9 @@ export function parseICS(icsContent: string): CalendarEvent[] {
                 const rawUrl: string | undefined = vevent.getFirstPropertyValue('url');
                 const pkMatch = event.description?.match(/https?:\/\/(?:lu\.ma|luma\.com)\/[^\s\\]+\?pk=[A-Za-z0-9\-_]+/i);
                 const descUrl = pkMatch ? pkMatch[0] : undefined;
+                // Fallback: any bare lu.ma/slug URL in the description (for hosted events with no pk link)
+                const bareMatch = !descUrl && event.description?.match(/https?:\/\/(?:lu\.ma|luma\.com)\/[A-Za-z0-9\-_]+(?=[\s\\<]|$)/i);
+                const bareUrl = bareMatch ? bareMatch[0] : undefined;
 
                 return {
                     uid: event.uid,
@@ -34,7 +37,7 @@ export function parseICS(icsContent: string): CalendarEvent[] {
                     end: event.endDate.toString(),
                     description: event.description,
                     location: event.location,
-                    url: rawUrl || descUrl,
+                    url: rawUrl || descUrl || bareUrl,
                 };
             })
             .filter((event) => {
