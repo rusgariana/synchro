@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { CalendarEvent } from '@/lib/calendar';
 import {
     generatePrivateKey,
@@ -77,7 +77,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
         setExportingEventId(event.uid);
         try {
             // Only include the private note in the export
-            const combinedNote = privateNotes[event.uid] ? `🟣 <b>PRIVATE NOTE</b> <i>via Synchro</i>\n${privateNotes[event.uid]}` : '';
+            const combinedNote = privateNotes[event.uid] ? privateNotes[event.uid] : '';
 
             const gId = await createGoogleCalendarEvent(accessToken, event, combinedNote);
             setExportedEvents(prev => ({ ...prev, [event.uid]: gId }));
@@ -213,16 +213,21 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
 
     const [joinerDoubleBlindedA, setJoinerDoubleBlindedA] = useState<string[]>([]);
 
+    // Track how many messages we've already processed so we never re-process old ones
+    const processedCountRef = useRef(0);
+
     const handleMessages = useCallback(async (messages: Message[]) => {
 
-
-        const myId = role;
-        if (!myId) {
-            // No role set, returning
-            return;
+        // Only process messages we haven't seen yet
+        const newMessages = messages.slice(processedCountRef.current);
+        if (newMessages.length > 0) {
+            processedCountRef.current = messages.length;
         }
 
-        const relevant = messages.filter(m => m.sender !== myId);
+        const myId = role;
+        if (!myId) return;
+
+        const relevant = newMessages.filter(m => m.sender !== myId);
 
         if (relevant.length === 0) return;
 
@@ -296,10 +301,14 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
             for (const msg of relevant) {
                 if (msg.type === 'PROPOSAL') {
                     const { uid, proposerName: pName } = msg.payload;
-                    setProposals(prev => ({
-                        ...prev,
-                        [uid]: { status: 'proposed', proposedBy: 'peer', proposerName: pName }
-                    }));
+                    // Don't overwrite a final state (accepted/cancelled/rejected) with a re-delivered PROPOSAL
+                    setProposals(prev => {
+                        const existing = prev[uid];
+                        if (existing && existing.status !== 'proposed' && existing.status !== undefined) {
+                            return prev; // already has a final state, ignore
+                        }
+                        return { ...prev, [uid]: { status: 'proposed', proposedBy: 'peer', proposerName: pName } };
+                    });
                 }
                 if (msg.type === 'PROPOSAL_ACCEPT') {
                     const { uid, acceptorName } = msg.payload;
@@ -313,7 +322,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                     // Find the event and create it in our calendar
                     const event = matches.find(e => e.uid === uid);
                     if (event && accessToken) {
-                        createGoogleCalendarEvent(accessToken, event, `🤝 Meeting ${resolvedPeerName} <i>via Synchro</i>`)
+                        createGoogleCalendarEvent(accessToken, event, `🤝 Meeting ${resolvedPeerName} via Synchro`)
                             .then(gId => {
                                 setProposals(prev => ({
                                     ...prev,
@@ -548,7 +557,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
             try {
                 const gId = await createGoogleCalendarEvent(
                     accessToken, event,
-                    `🤝 Meeting ${proposals[event.uid]?.proposerName || 'Peer'} <i>via Synchro</i>`
+                    `🤝 Meeting ${proposals[event.uid]?.proposerName || 'Peer'} via Synchro`
                 );
                 setProposals(prev => ({ ...prev, [event.uid]: { ...prev[event.uid], status: 'accepted', googleEventId: gId } }));
                 setExportedEvents(prev => ({ ...prev, [event.uid]: gId }));
@@ -586,7 +595,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
         try {
             const gId = await createGoogleCalendarEvent(
                 accessToken, event,
-                `🤝 Meeting ${p?.proposerName || peerName || 'Peer'} <i>via Synchro</i>`
+                `🤝 Meeting ${p?.proposerName || peerName || 'Peer'} via Synchro`
             );
             setProposals(prev => ({ ...prev, [event.uid]: { ...prev[event.uid], pendingCalendarAdd: false, googleEventId: gId } }));
             setExportedEvents(prev => ({ ...prev, [event.uid]: gId }));
@@ -604,12 +613,6 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
     return (
         <div className="w-full bg-zinc-900/50 border border-zinc-800 rounded-2xl backdrop-blur-xl p-6 shadow-xl relative overflow-hidden">
             {state === 'IDLE' && viewMode === 'IDLE' && (
-                activeSessionId && activeSessionId !== sessionId ? (
-                    <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
-                        <div className="text-zinc-400 text-sm">A matching session is already active.</div>
-                        <div className="text-zinc-600 text-xs">End the current session before starting a new one.</div>
-                    </div>
-                ) : (
                 <>
                 <div className="grid md:grid-cols-2 gap-6 p-2">
                     <button
@@ -655,8 +658,8 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                     </div>
                 )}
                 </>
-                )
             )}
+
 
             {/* Saved Sessions List Context */}
             {state === 'IDLE' && viewMode === 'HISTORY' && (

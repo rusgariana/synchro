@@ -65,19 +65,39 @@ export async function savePrivateNote(
     const event = await getRes.json();
     const currentDesc = event.description || '';
     
-    // 2. Safely replace or append the Synchro Note section
+    // 2. Build the new post-separator section preserving both system and user notes
     const separator = '\n\n-------------------------------\n';
-    const noteHeader = '🟣 Private Note via Synchro\n';
-    let newDesc = currentDesc;
-    
+    const isSystemNote = /^(🤝|🚫)/.test(note);
+    const isUserNote = /^🟣/.test(note) || (!isSystemNote && note.trim() !== '');
+
+    let preSection = currentDesc; // everything before the separator
+    let systemLine = '';          // 🤝 / 🚫 line
+    let userSection = '';         // 🟣 Private Note via Synchro + text
+
     if (currentDesc.includes('-------------------------------')) {
-        // Strip out the old notes section and replace it
-        newDesc = currentDesc.split('-------------------------------')[0].trimEnd();
-        if (note) newDesc += separator + noteHeader + note;
-    } else if (note) {
-        // Append new notes section
-        newDesc += separator + noteHeader + note;
+        const parts = currentDesc.split('-------------------------------');
+        preSection = parts[0].trimEnd();
+        const afterSep = (parts.slice(1).join('-------------------------------')).trimStart();
+
+        // Parse existing system and user lines from afterSep
+        const lines = afterSep.split('\n');
+        for (const line of lines) {
+            if (/^(🤝|🚫)/.test(line)) systemLine = line;
+            else if (line.startsWith('🟣')) userSection = lines.slice(lines.indexOf(line)).join('\n');
+        }
     }
+
+    // Update whichever section this note belongs to
+    if (isSystemNote) {
+        systemLine = note;
+    } else if (note) {
+        userSection = `🟣 Private Note via Synchro\n${note}`;
+    }
+
+    // Reconstruct
+    const postSection = [systemLine, userSection].filter(Boolean).join('\n');
+    let newDesc = preSection;
+    if (postSection) newDesc += separator + postSection;
 
     // 3. Patch the new description and extendedProperties
     const res = await fetch(url, {
