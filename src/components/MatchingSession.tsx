@@ -170,6 +170,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
     }, [accessToken]);
 
      // Auto-save: merge into existing same-peer session to avoid duplicate entries
+    useEffect(() => {
         if (state === 'RESULTS' && sessionId && role && matches.length > 0) {
             const label = sessionLabel || 'Synchro w/ Peer';
             const all = getSavedSessions();
