@@ -169,29 +169,38 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
         }
     }, [accessToken]);
 
-    // Effect to auto-save current active session - only when key session data changes, NOT on every privateNotes update
-    useEffect(() => {
+     // Auto-save: merge into existing same-peer session to avoid duplicate entries
         if (state === 'RESULTS' && sessionId && role && matches.length > 0) {
-            const newSession = {
-                id: sessionId,
-                role,
-                date: new Date().toISOString(),
-                matches,
-                notes: {}, // peer notes removed
-                privateNotes: privateNotes || {},
-                proposals,
-                label: sessionLabel || 'Synchro w/ Peer'
-            };
-            saveSession(newSession);
+            const label = sessionLabel || 'Synchro w/ Peer';
+            const all = getSavedSessions();
+            const existingIdx = all.findIndex(s => s.id !== sessionId && (s.label || '') === label);
+
+            if (existingIdx >= 0) {
+                // Merge current proposals/matches into the existing session
+                const existing = all[existingIdx];
+                const mergedMatches = [...existing.matches];
+                for (const m of matches) {
+                    if (!mergedMatches.find(e => e.uid === m.uid)) mergedMatches.push(m);
+                }
+                const mergedProposals = { ...existing.proposals };
+                for (const [uid, p] of Object.entries(proposals)) {
+                    const existingStatus = mergedProposals[uid]?.status;
+                    // Newer status wins unless existing is a final state already
+                    if (!existingStatus || existingStatus === 'none' || p.status !== 'none') {
+                        mergedProposals[uid] = p;
+                    }
+                }
+                const merged = { ...existing, matches: mergedMatches, proposals: mergedProposals, date: new Date().toISOString() };
+                saveSession(merged);
+            } else {
+                // No existing session with this peer — save fresh
+                saveSession({ id: sessionId, role, date: new Date().toISOString(), matches, notes: {}, privateNotes: privateNotes || {}, proposals, label });
+            }
+
             const updated = getSavedSessions();
             setSavedSessions(updated);
-            
-            // Sync to Google
-            if (accessToken) {
-                saveGoogleSessionHistory(accessToken, updated.slice(0, 10));
-            }
+            if (accessToken) saveGoogleSessionHistory(accessToken, updated.slice(0, 10));
         }
-    // Intentionally exclude privateNotes - private notes save is handled separately
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [state, sessionId, role, matches, proposals, sessionLabel, accessToken]);
 
@@ -1004,7 +1013,13 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                                 {proposals[event.uid]?.status === 'cancelled' && (
                                     <div className="px-3 py-2 rounded-lg bg-red-900/20 border border-red-700/30 text-sm text-red-400 flex items-center gap-2">
                                         <Ban className="w-4 h-4 shrink-0" />
-                                        <span>Canceled meeting w/ {proposals[event.uid]?.cancelledByName || peerName || 'Peer'}</span>
+                                        <span>Canceled meeting w/ {
+                                            // Show peerName (who the meeting was WITH) not who cancelled
+                                            // If I was the canceller, show peerName; otherwise show cancelledByName
+                                            proposals[event.uid]?.cancelledByName === userName
+                                                ? (peerName || 'Peer')
+                                                : (proposals[event.uid]?.cancelledByName || peerName || 'Peer')
+                                        }</span>
                                     </div>
                                 )}
 
@@ -1032,37 +1047,37 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                                     const canReject = !isHistory && status === 'proposed' && !isMeProposer;
                                     const canCancel = (status === 'proposed' && isMeProposer) || status === 'accepted';
                                     return (
-                                        <div className="flex items-center gap-2 pt-2 border-t border-zinc-700/40" onClick={e => e.stopPropagation()}>
+                                        <div className="grid grid-cols-2 sm:flex sm:flex-row items-center gap-1.5 pt-2 border-t border-zinc-700/40" onClick={e => e.stopPropagation()}>
                                             <button
                                                 onClick={() => handlePropose(event)}
                                                 disabled={!canPropose || proposingEventId === event.uid}
-                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-zinc-700/60 hover:bg-primary/20 hover:text-primary disabled:hover:bg-zinc-700/60 disabled:hover:text-current"
+                                                className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-zinc-700/60 hover:bg-primary/20 hover:text-primary disabled:hover:bg-zinc-700/60 disabled:hover:text-current"
                                             >
-                                                {proposingEventId === event.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarCheck className="w-3.5 h-3.5" />}
+                                                {proposingEventId === event.uid ? <Loader2 className="w-3 h-3 animate-spin" /> : <CalendarCheck className="w-3 h-3" />}
                                                 Propose
                                             </button>
                                             <button
                                                 onClick={() => handleAccept(event)}
                                                 disabled={!canAccept}
-                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-zinc-700/60 hover:bg-emerald-600/20 hover:text-emerald-400 disabled:hover:bg-zinc-700/60 disabled:hover:text-current"
+                                                className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-zinc-700/60 hover:bg-emerald-600/20 hover:text-emerald-400 disabled:hover:bg-zinc-700/60 disabled:hover:text-current"
                                             >
-                                                <Check className="w-3.5 h-3.5" />
+                                                <Check className="w-3 h-3" />
                                                 Accept
                                             </button>
                                             <button
                                                 onClick={() => handleReject(event.uid)}
                                                 disabled={!canReject}
-                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-zinc-700/60 hover:bg-red-500/20 hover:text-red-400 disabled:hover:bg-zinc-700/60 disabled:hover:text-current"
+                                                className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-zinc-700/60 hover:bg-red-500/20 hover:text-red-400 disabled:hover:bg-zinc-700/60 disabled:hover:text-current"
                                             >
-                                                <X className="w-3.5 h-3.5" />
+                                                <X className="w-3 h-3" />
                                                 Reject
                                             </button>
                                             <button
                                                 onClick={() => handleCancel(event.uid)}
                                                 disabled={!canCancel}
-                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-zinc-700/60 hover:bg-orange-500/20 hover:text-orange-400 disabled:hover:bg-zinc-700/60 disabled:hover:text-current"
+                                                className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-zinc-700/60 hover:bg-orange-500/20 hover:text-orange-400 disabled:hover:bg-zinc-700/60 disabled:hover:text-current"
                                             >
-                                                <Ban className="w-3.5 h-3.5" />
+                                                <Ban className="w-3 h-3" />
                                                 Cancel
                                             </button>
                                         </div>

@@ -4,6 +4,7 @@ const METADATA_EVENT_SUMMARY = '_synchro_metadata_do_not_delete';
 
 /**
  * Fetch session history stored in the user's Google Calendar.
+ * Reads chunked storage (synchro_history_0, _1, ...) to reassemble the full JSON.
  */
 export async function fetchGoogleSessionHistory(accessToken: string): Promise<SavedSession[]> {
   try {
@@ -18,12 +19,28 @@ export async function fetchGoogleSessionHistory(accessToken: string): Promise<Sa
     if (!res.ok) return [];
 
     const data = await res.json();
-    const metaEvent = data.items?.find((item: any) => item.extendedProperties?.private?.synchro_history);
+    const metaEvent = data.items?.find((item: any) =>
+      item.extendedProperties?.private?.synchro_history ||
+      item.extendedProperties?.private?.synchro_history_count
+    );
 
-    if (metaEvent) {
-      const historyStr = metaEvent.extendedProperties.private.synchro_history;
-      return JSON.parse(historyStr);
+    if (!metaEvent) return [];
+
+    const props = metaEvent.extendedProperties?.private || {};
+
+    // Legacy: single key (old format)
+    if (props.synchro_history && !props.synchro_history_count) {
+      try { return JSON.parse(props.synchro_history); } catch { return []; }
     }
+
+    // Chunked format
+    const count = parseInt(props.synchro_history_count || '0', 10);
+    if (count === 0) return [];
+    let json = '';
+    for (let i = 0; i < count; i++) {
+      json += props[`synchro_history_${i}`] || '';
+    }
+    return JSON.parse(json);
   } catch (e) {
     console.error('Failed to fetch Google session history', e);
   }
@@ -43,12 +60,9 @@ export async function saveGoogleSessionHistory(accessToken: string, history: Sav
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     const searchData = await searchRes.json();
-    const existingEvent = searchData.items?.find((item: any) => item.extendedProperties?.private?.synchro_history);
+    const existingEvent = searchData.items?.find((item: any) => item.extendedProperties?.private?.synchro_history || item.extendedProperties?.private?.synchro_history_count);
 
-    // Strip heavy fields (event descriptions, etc.) before storing to GCal.
-    // GCal extended properties have a hard 1024-byte limit per key.
-    // Full Luma descriptions easily exceed this, causing silent truncation/corruption.
-    // Lightweight fields are sufficient for cross-browser restoration.
+    // 2. Strip heavy fields to keep JSON small (GCal limit: 1024 bytes per key)
     const minimalHistory = history.map(s => ({
       ...s,
       matches: (s.matches || []).map(m => ({
@@ -58,35 +72,34 @@ export async function saveGoogleSessionHistory(accessToken: string, history: Sav
         end: m.end,
         location: m.location,
         url: m.url,
-        // description intentionally omitted — too large
       })),
     }));
-    const historyStr = JSON.stringify(minimalHistory);
+    const json = JSON.stringify(minimalHistory);
+
+    // 3. Split into 900-byte chunks (safely under the 1024-byte per-key limit)
+    const CHUNK = 900;
+    const chunks: string[] = [];
+    for (let i = 0; i < json.length; i += CHUNK) chunks.push(json.slice(i, i + CHUNK));
+
+    // 4. Build extendedProperties payload
+    const privateProps: Record<string, string> = {
+      synchro_history_count: chunks.length.toString(),
+      synchro_history: '', // clear legacy key
+    };
+    chunks.forEach((chunk, idx) => { privateProps[`synchro_history_${idx}`] = chunk; });
+
+    const body = JSON.stringify({ extendedProperties: { private: privateProps } });
 
     if (existingEvent) {
-      // Update existing
       await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${existingEvent.id}`, {
         method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          extendedProperties: {
-            private: {
-              synchro_history: historyStr,
-            },
-          },
-        }),
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body,
       });
     } else {
-      // Create new hidden event
       await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           summary: METADATA_EVENT_SUMMARY,
           description: 'Synchro internal metadata. Do not delete.',
@@ -94,11 +107,7 @@ export async function saveGoogleSessionHistory(accessToken: string, history: Sav
           end: { date: '1970-01-01' },
           transparency: 'transparent',
           visibility: 'private',
-          extendedProperties: {
-            private: {
-              synchro_history: historyStr,
-            },
-          },
+          extendedProperties: { private: privateProps },
         }),
       });
     }

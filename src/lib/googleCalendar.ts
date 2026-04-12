@@ -64,15 +64,14 @@ export async function savePrivateNote(
     
     const event = await getRes.json();
     const currentDesc = event.description || '';
-    
+
     // 2. Build the new post-separator section preserving both system and user notes
     const separator = '\n\n-------------------------------\n';
     const isSystemNote = /^(🤝|🚫)/.test(note);
-    const isUserNote = /^🟣/.test(note) || (!isSystemNote && note.trim() !== '');
 
     let preSection = currentDesc; // everything before the separator
-    let systemLine = '';          // 🤝 / 🚫 line
-    let userSection = '';         // 🟣 Private Note via Synchro + text
+    let systemLines: string[] = []; // all 🤝 / 🚫 lines (one per peer)
+    let userSection = '';           // 🟣 Private Note via Synchro + text
 
     if (currentDesc.includes('-------------------------------')) {
         const parts = currentDesc.split('-------------------------------');
@@ -81,21 +80,30 @@ export async function savePrivateNote(
 
         // Parse existing system and user lines from afterSep
         const lines = afterSep.split('\n');
-        for (const line of lines) {
-            if (/^(🤝|🚫)/.test(line)) systemLine = line;
-            else if (line.startsWith('🟣')) userSection = lines.slice(lines.indexOf(line)).join('\n');
+        for (let i = 0; i < lines.length; i++) {
+            if (/^(🤝|🚫)/.test(lines[i])) systemLines.push(lines[i]);
+            else if (lines[i].startsWith('🟣')) { userSection = lines.slice(i).join('\n'); break; }
         }
     }
 
     // Update whichever section this note belongs to
     if (isSystemNote) {
-        systemLine = note;
+        if (note.startsWith('🚫')) {
+            // Cancellation: find and replace the 🤝 line for the same peer
+            const peerMatch = note.match(/w\/ (.+?) via/i);
+            const peer = peerMatch?.[1];
+            systemLines = systemLines.filter(l => !(l.startsWith('🤝') && peer && l.includes(peer)));
+            systemLines.push(note);
+        } else {
+            // New meeting (🤝): append only if not already listed
+            if (!systemLines.includes(note)) systemLines.push(note);
+        }
     } else if (note) {
         userSection = `🟣 Private Note via Synchro\n${note}`;
     }
 
     // Reconstruct
-    const postSection = [systemLine, userSection].filter(Boolean).join('\n');
+    const postSection = [...systemLines, ...(userSection ? [userSection] : [])].join('\n');
     let newDesc = preSection;
     if (postSection) newDesc += separator + postSection;
 

@@ -163,29 +163,37 @@ function EventsList({ events, accessToken, onRefresh, isRefreshing }: { events: 
                                 )}
                             </div>
                             <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                                <button
-                                    onClick={() => handleExportToGoogle(event)}
-                                    disabled={exportingEventId === event.uid || !!exportedEvents[event.uid]}
-                                    className={`p-2 rounded-lg transition-colors ${exportedEvents[event.uid] ? 'bg-green-500/20 text-green-400' : 'bg-zinc-800/50 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200'}`}
-                                    title={exportedEvents[event.uid] ? "Saved to Google" : "Export to Google Calendar"}
-                                >
-                                    {exportingEventId === event.uid ? <Loader2 className="w-4 h-4 animate-spin" /> :
-                                        exportedEvents[event.uid] ? <Check className="w-4 h-4" /> : <CalendarPlus className="w-4 h-4" />}
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        if (activePrivateNoteId === event.uid) {
-                                            setActivePrivateNoteId(null);
-                                        } else {
-                                            setActivePrivateNoteId(event.uid);
-                                            setPrivateNoteText(privateNotes[event.uid] || '');
-                                        }
-                                    }}
-                                    className="p-2 rounded-lg bg-zinc-800/50 hover:bg-zinc-700 text-zinc-400 transition-colors"
-                                    title="Add personal private note"
-                                >
-                                    <StickyNote className={`w-4 h-4 ${privateNotes[event.uid] ? 'text-amber-400 fill-amber-400/20' : ''}`} />
-                                </button>
+                                <div className="relative group/tip">
+                                    <button
+                                        onClick={() => handleExportToGoogle(event)}
+                                        disabled={exportingEventId === event.uid || !!exportedEvents[event.uid]}
+                                        className={`p-2 rounded-lg transition-colors ${exportedEvents[event.uid] ? 'bg-green-500/20 text-green-400' : 'bg-zinc-800/50 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200'}`}
+                                    >
+                                        {exportingEventId === event.uid ? <Loader2 className="w-4 h-4 animate-spin" /> :
+                                            exportedEvents[event.uid] ? <Check className="w-4 h-4" /> : <CalendarPlus className="w-4 h-4" />}
+                                    </button>
+                                    <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-[10px] bg-zinc-800 text-zinc-200 rounded whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-50 shadow-lg">
+                                        {exportedEvents[event.uid] ? 'Saved to Google Calendar' : 'Export to Google Calendar'}
+                                    </span>
+                                </div>
+                                <div className="relative group/tip">
+                                    <button
+                                        onClick={() => {
+                                            if (activePrivateNoteId === event.uid) {
+                                                setActivePrivateNoteId(null);
+                                            } else {
+                                                setActivePrivateNoteId(event.uid);
+                                                setPrivateNoteText(privateNotes[event.uid] || '');
+                                            }
+                                        }}
+                                        className="p-2 rounded-lg bg-zinc-800/50 hover:bg-zinc-700 text-zinc-400 transition-colors"
+                                    >
+                                        <StickyNote className={`w-4 h-4 ${privateNotes[event.uid] ? 'text-amber-400 fill-amber-400/20' : ''}`} />
+                                    </button>
+                                    <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-[10px] bg-zinc-800 text-zinc-200 rounded whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-50 shadow-lg">
+                                        {activePrivateNoteId === event.uid ? 'Close note' : 'Add private note'}
+                                    </span>
+                                </div>
                             </div>
                         </div>
 
