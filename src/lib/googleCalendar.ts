@@ -90,8 +90,9 @@ export async function savePrivateNote(
     if (isSystemNote) {
         if (note.startsWith('🚫')) {
             // Cancellation: find and replace the 🤝 line for the same peer
-            const peerMatch = note.match(/w\/ (.+?) via/i);
-            const peer = peerMatch?.[1];
+            // Format: "🚫 Canceled meeting w/ Ivan Fartunov" (no "via" at end)
+            const peerMatch = note.match(/w\/ (.+?)$/);
+            const peer = peerMatch?.[1]?.trim();
             systemLines = systemLines.filter(l => !(l.startsWith('🤝') && peer && l.includes(peer)));
             systemLines.push(note);
         } else {
@@ -118,7 +119,9 @@ export async function savePrivateNote(
             description: newDesc,
             extendedProperties: {
                 private: {
-                    synchro_note: note,
+                    // Only store user private notes in synchro_note — NOT system notes (🤝/🚫)
+                    // System notes live only in the GCal description so they don't appear in our private note UI
+                    ...(!isSystemNote ? { synchro_note: note } : {}),
                 },
             },
         }),
@@ -213,7 +216,7 @@ export async function createGoogleCalendarEvent(
             description: note ? `${event.description || ''}\n\n-------------------------------\n\n${note}` : event.description,
             extendedProperties: {
                 private: {
-                    synchro_note: note || '',
+                    ...((note && !/^(🤝|🚫)/.test(note)) ? { synchro_note: note } : {}),
                 },
             },
         }),

@@ -172,7 +172,7 @@ function EventsList({ events, accessToken, onRefresh, isRefreshing }: { events: 
                                         {exportingEventId === event.uid ? <Loader2 className="w-4 h-4 animate-spin" /> :
                                             exportedEvents[event.uid] ? <Check className="w-4 h-4" /> : <CalendarPlus className="w-4 h-4" />}
                                     </button>
-                                    <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-[10px] bg-zinc-800 text-zinc-200 rounded whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-50 shadow-lg">
+                                    <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-1 text-[10px] bg-zinc-800 text-zinc-200 rounded whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-50 shadow-lg">
                                         {exportedEvents[event.uid] ? 'Saved to Google Calendar' : 'Export to Google Calendar'}
                                     </span>
                                 </div>
@@ -190,7 +190,7 @@ function EventsList({ events, accessToken, onRefresh, isRefreshing }: { events: 
                                     >
                                         <StickyNote className={`w-4 h-4 ${privateNotes[event.uid] ? 'text-amber-400 fill-amber-400/20' : ''}`} />
                                     </button>
-                                    <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-[10px] bg-zinc-800 text-zinc-200 rounded whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-50 shadow-lg">
+                                    <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-1 text-[10px] bg-zinc-800 text-zinc-200 rounded whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-50 shadow-lg">
                                         {activePrivateNoteId === event.uid ? 'Close note' : 'Add private note'}
                                     </span>
                                 </div>
@@ -246,19 +246,20 @@ export default function Home() {
     // Tab state
     const [activeTab, setActiveTabState] = useState<'match' | 'schedule' | 'history'>('match');
 
-    // On mount: if no session flag exists, land on Match tab.
-    // sessionStorage clears when the tab closes, so first load of a new session always lands on Match.
-    // Refreshes within the same session keep the tab from localStorage.
+    // On mount: Always land on Match after a navigation/login (OAuth redirect).
+    // Distinguish page refresh (reload) vs redirect using performance API.
     useEffect(() => {
-        const alreadyLanded = sessionStorage.getItem('synchro_tab_landed');
-        if (!alreadyLanded) {
+        const navEntry = performance.getEntriesByType?.('navigation')?.[0] as PerformanceNavigationTiming | undefined;
+        const isReload = navEntry ? navEntry.type === 'reload' : (performance.navigation?.type === 1);
+        if (!isReload) {
+            // Navigation or first visit (including OAuth redirect) → always Match
             setActiveTabState('match');
             localStorage.setItem('synchro_activeTab', 'match');
-            sessionStorage.setItem('synchro_tab_landed', '1');
         } else {
+            // Page refresh → restore saved tab
             const savedTab = localStorage.getItem('synchro_activeTab');
             if (savedTab === 'match' || savedTab === 'schedule' || savedTab === 'history') {
-                setActiveTabState(savedTab);
+                setActiveTabState(savedTab as any);
             }
         }
     }, []);

@@ -232,7 +232,10 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                     if (res.ok) {
                         const ev = await res.json();
                         const note = ev.extendedProperties?.private?.synchro_note;
-                        if (note) setPrivateNotes(prev => ({ ...prev, [uid]: note }));
+                        // Only load USER private notes — not system notes (🤝 meeting confirmations / 🚫 cancellations)
+                        if (note && !/^(🤝|🚫)/.test(note)) {
+                            setPrivateNotes(prev => ({ ...prev, [uid]: note }));
+                        }
                     }
                 } catch { /* silent */ }
             });
@@ -705,16 +708,11 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                 </div>
 
                 {duplicateWarning && (
-                    <div className="mt-4 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-300 flex items-center justify-between gap-3">
-                        <span>You already have a session with <strong>{duplicateWarning.label}</strong>. Open it instead?</span>
-                        <button
-                            onClick={() => { loadSavedSession(duplicateWarning.session); setDuplicateWarning(null); }}
-                            className="shrink-0 px-3 py-1.5 text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/40 rounded-lg transition-colors"
-                        >
-                            Open Session
-                        </button>
+                    <div className="mt-4 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-300">
+                        <span>Previous session with <strong>{duplicateWarning.label}</strong> exists — proposals merged.</span>
                     </div>
                 )}
+
                 </>
             )}
 
@@ -894,14 +892,8 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
 
                     {/* Duplicate peer warning — shown when a session with this peer already exists */}
                     {duplicateWarning && viewMode !== 'HISTORY' && (
-                        <div className="mb-4 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-300 flex items-center justify-between gap-3">
-                            <span>You already have a saved session with <strong>{duplicateWarning.label}</strong>.</span>
-                            <button
-                                onClick={() => { loadSavedSession(duplicateWarning.session); setDuplicateWarning(null); }}
-                                className="shrink-0 px-3 py-1.5 text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/40 rounded-lg transition-colors"
-                            >
-                                Open Existing
-                            </button>
+                        <div className="mb-4 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-300">
+                            <span>Previous session with <strong>{duplicateWarning.label}</strong> found — proposals merged into existing record.</span>
                         </div>
                     )}
 
