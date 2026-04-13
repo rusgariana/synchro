@@ -48,11 +48,13 @@ export async function fetchGoogleCalendarEvents(accessToken: string): Promise<Ca
 /**
  * Save a private note to a Google Calendar event using extendedProperties.private.
  * These notes are invisible to other users and to Google Calendar itself.
+ * noteLabel is used as the section header — different labels stack as separate sections.
  */
 export async function savePrivateNote(
     accessToken: string,
     googleEventId: string,
-    note: string
+    note: string,
+    noteLabel = 'Private Note _via Synchro_'
 ): Promise<void> {
     const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(googleEventId)}`;
 
@@ -65,32 +67,43 @@ export async function savePrivateNote(
     const event = await getRes.json();
     const currentDesc = event.description || '';
 
-    // 2. Build the new post-separator section preserving both system and user notes
+    // 2. Build the new post-separator section preserving system notes and all named user-note sections
     const separator = '\n\n-------------------------------\n';
     const isSystemNote = /^(🤝|🚫)/.test(note);
 
-    let preSection = currentDesc; // everything before the separator
-    let systemLines: string[] = []; // all 🤝 / 🚫 lines (one per peer)
-    let userSection = '';           // 🟣 Private Note via Synchro + text
+    let preSection = currentDesc;
+    let systemLines: string[] = [];
+    // noteBlocks: each entry is one user note section identified by its header
+    const noteBlocks: { header: string; text: string }[] = [];
 
     if (currentDesc.includes('-------------------------------')) {
         const parts = currentDesc.split('-------------------------------');
         preSection = parts[0].trimEnd();
         const afterSep = (parts.slice(1).join('-------------------------------')).trimStart();
 
-        // Parse existing system and user lines from afterSep
+        // Parse existing sections from afterSep
         const lines = afterSep.split('\n');
+        let curHeader = '';
+        let curLines: string[] = [];
         for (let i = 0; i < lines.length; i++) {
-            if (/^(🤝|🚫)/.test(lines[i])) systemLines.push(lines[i]);
-            else if (lines[i].startsWith('🟣')) { userSection = lines.slice(i).join('\n'); break; }
+            if (/^(🤝|🚫)/.test(lines[i])) {
+                systemLines.push(lines[i]);
+            } else if (lines[i].startsWith('🟣')) {
+                // Save previous user block if any
+                if (curHeader) noteBlocks.push({ header: curHeader, text: curLines.join('\n') });
+                curHeader = lines[i];
+                curLines = [];
+            } else if (curHeader) {
+                curLines.push(lines[i]);
+            }
         }
+        if (curHeader) noteBlocks.push({ header: curHeader, text: curLines.join('\n') });
     }
 
     // Update whichever section this note belongs to
     if (isSystemNote) {
         if (note.startsWith('🚫')) {
-            // Cancellation: find and replace the 🤝 line for the same peer
-            // Format: "🚫 Canceled meeting w/ Ivan Fartunov" (no "via" at end)
+            // Cancellation: replace the matching 🤝 line
             const peerMatch = note.match(/w\/ (.+?)$/);
             const peer = peerMatch?.[1]?.trim();
             systemLines = systemLines.filter(l => !(l.startsWith('🤝') && peer && l.includes(peer)));
@@ -100,11 +113,18 @@ export async function savePrivateNote(
             if (!systemLines.includes(note)) systemLines.push(note);
         }
     } else if (note) {
-        userSection = `🟣 Private Note via Synchro\n${note}`;
+        const sectionHeader = `🟣 ${noteLabel}`;
+        const existingIdx = noteBlocks.findIndex(b => b.header === sectionHeader);
+        if (existingIdx >= 0) {
+            noteBlocks[existingIdx].text = note;
+        } else {
+            noteBlocks.push({ header: sectionHeader, text: note });
+        }
     }
 
     // Reconstruct
-    const postSection = [...systemLines, ...(userSection ? [userSection] : [])].join('\n');
+    const userSections = noteBlocks.map(b => `${b.header}\n${b.text}`).join('\n');
+    const postSection = [...systemLines, ...(userSections ? [userSections] : [])].join('\n');
     let newDesc = preSection;
     if (postSection) newDesc += separator + postSection;
 

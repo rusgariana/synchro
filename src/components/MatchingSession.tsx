@@ -44,6 +44,10 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
     const [sessionLabel, setSessionLabel] = useState<string>('');
     const [isEditingLabel, setIsEditingLabel] = useState<boolean>(false);
     const [peerName, setPeerName] = useState<string>('');
+    // Tracks the LIVE session for polling — NOT changed by loadSavedSession
+    const liveSessionIdRef = useRef<string>('');
+    // Tracks recently received proposal signals for visual notification flashes
+    const [flashedEvents, setFlashedEvents] = useState<Record<string, 'positive' | 'negative'>>({});
 
     const { expireSession } = useGoogleAuth();
 
@@ -117,7 +121,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
         if (googleEventId && accessToken) {
             setSavingNoteId(eventUid);
             try {
-                await savePrivateNote(accessToken, googleEventId, noteText);
+                await savePrivateNote(accessToken, googleEventId, noteText, `Note _via Synchro_ (w/ ${peerName || 'Peer'})`);
             } catch (e: any) {
                 console.error('Failed to update private note on Google Calendar', e);
                 if (e.message?.includes('401')) expireSession();
@@ -191,7 +195,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                         mergedProposals[uid] = p;
                     }
                 }
-                const merged = { ...existing, matches: mergedMatches, proposals: mergedProposals, date: new Date().toISOString() };
+                const merged = { ...existing, matches: mergedMatches, proposals: mergedProposals }; // preserve original date
                 saveSession(merged);
             } else {
                 // No existing session with this peer — save fresh
@@ -348,6 +352,8 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
             for (const msg of relevant) {
                 if (msg.type === 'PROPOSAL') {
                     const { uid, proposerName: pName } = msg.payload;
+                    setFlashedEvents(prev => ({ ...prev, [uid]: 'positive' }));
+                    setTimeout(() => setFlashedEvents(prev => { const n = {...prev}; delete n[uid]; return n; }), 3000);
                     // Don't overwrite a final state (accepted/cancelled/rejected) with a re-delivered PROPOSAL
                     setProposals(prev => {
                         const existing = prev[uid];
@@ -359,6 +365,8 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                 }
                 if (msg.type === 'PROPOSAL_ACCEPT') {
                     const { uid, acceptorName } = msg.payload;
+                    setFlashedEvents(prev => ({ ...prev, [uid]: 'positive' }));
+                    setTimeout(() => setFlashedEvents(prev => { const n = {...prev}; delete n[uid]; return n; }), 3000);
                     // Peer accepted our proposal — create the event on our calendar
                     // Use acceptorName from the signal payload to avoid stale closure issue
                     const resolvedPeerName = acceptorName || peerName || 'Peer';
@@ -385,6 +393,8 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                 }
                 if (msg.type === 'PROPOSAL_REJECT') {
                     const { uid } = msg.payload;
+                    setFlashedEvents(prev => ({ ...prev, [uid]: 'negative' }));
+                    setTimeout(() => setFlashedEvents(prev => { const n = {...prev}; delete n[uid]; return n; }), 3000);
                     setProposals(prev => ({
                         ...prev,
                         [uid]: { ...prev[uid], status: 'rejected_by_peer' }
@@ -392,6 +402,8 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                 }
                 if (msg.type === 'PROPOSAL_CANCEL') {
                     const { uid, cancellerName } = msg.payload;
+                    setFlashedEvents(prev => ({ ...prev, [uid]: 'negative' }));
+                    setTimeout(() => setFlashedEvents(prev => { const n = {...prev}; delete n[uid]; return n; }), 3000);
                     setProposals(prev => ({
                         ...prev,
                         [uid]: { ...prev[uid], status: 'cancelled', cancelledByName: cancellerName }
@@ -407,16 +419,17 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
         }
     }, [role, state, events, privateKey, joinerDoubleBlindedA, sharedSecret, proposals, matches, peerName, accessToken, exportedEvents]);
 
-    // Polling — active during handshake and also during RESULTS to receive proposal signals
+    // Polling — uses liveSessionIdRef so it continues on the LIVE session even when history is loaded
     useEffect(() => {
-        if (!sessionId) return;
+        const pollId = liveSessionIdRef.current || sessionId;
+        if (!pollId) return;
 
         const interval = setInterval(async () => {
             try {
                 const res = await fetch('/api/signal', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'poll', sessionId }),
+                    body: JSON.stringify({ action: 'poll', sessionId: pollId }),
                 });
                 if (!res.ok) return;
                 const data = await res.json();
@@ -454,6 +467,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
             body: JSON.stringify({ action: 'create' }),
         });
         const data = await res.json();
+        liveSessionIdRef.current = data.sessionId; // fix Bug 7: keep polling live session
         setSessionId(data.sessionId);
         setRole('INITIATOR');
         setState('CREATED');
@@ -480,6 +494,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
             }),
         });
         if (res.ok) {
+            liveSessionIdRef.current = inputSessionId; // fix Bug 7
             setSessionId(inputSessionId);
             setRole('JOINER');
             setState('EXCHANGING'); // Wait for Step 1
@@ -901,16 +916,13 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                         {displayMode === 'list' ? matches.map(event => (
                             <div
                                 key={event.uid}
-                                className={`group relative p-4 rounded-xl border flex flex-col gap-4 transition-all duration-200 ${
-                                    proposals[event.uid]?.status === 'accepted'
-                                        ? 'bg-emerald-950/30 border-emerald-700/40 hover:border-emerald-600/60 hover:shadow-[0_0_24px_2px_rgba(16,185,129,0.12)]'
-                                        : proposals[event.uid]?.status === 'cancelled'
-                                        ? 'bg-zinc-900/60 border-zinc-700/30 opacity-70'
-                                        : 'bg-zinc-800/50 border-zinc-700 hover:border-violet-500/50 hover:bg-violet-950/20 hover:shadow-[0_0_28px_4px_rgba(139,92,246,0.12)]'
-                                }`}
+                                className={`rounded-xl border bg-zinc-900/80 backdrop-blur-sm transition-all duration-300 overflow-hidden
+                                    ${ flashedEvents[event.uid] === 'positive' ? 'border-emerald-500 ring-2 ring-emerald-500/40'
+                                      : flashedEvents[event.uid] === 'negative' ? 'border-amber-500 ring-2 ring-amber-500/40'
+                                      : proposals[event.uid]?.status === 'accepted' ? 'border-emerald-700/50' : 'border-zinc-700/50' }`}
                             >
                                 {/* Event header */}
-                                <div className="flex justify-between items-start gap-3">
+                                <div className="flex justify-between items-start gap-3 p-4">
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2 mb-1">
                                             <span className="text-xs font-bold text-zinc-400">
@@ -920,9 +932,6 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                                             <span className="text-xs text-zinc-500">
                                                 {new Date(event.start).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
                                             </span>
-                                            {event.url && (
-                                                <ExternalLink className="w-3 h-3 text-zinc-600 group-hover:text-violet-400 transition-colors ml-1" />
-                                            )}
                                         </div>
                                         {event.url ? (
                                             <a
@@ -972,6 +981,9 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                                     </div>
                                 </div>
 
+                                {/* Card body — padding separate from header so the flash ring doesn't clip content */}
+                                <div className="px-4 pb-4 flex flex-col gap-3">
+
                                 {/* Meeting Proposal Status Banner */}
                                 {proposals[event.uid]?.status === 'proposed' && proposals[event.uid]?.proposedBy === 'peer' && (
                                     <div className="px-3 py-2 rounded-lg bg-primary/10 border border-primary/30 text-sm text-primary font-medium flex items-center gap-2">
@@ -1007,8 +1019,6 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                                     <div className="px-3 py-2 rounded-lg bg-red-900/20 border border-red-700/30 text-sm text-red-400 flex items-center gap-2">
                                         <Ban className="w-4 h-4 shrink-0" />
                                         <span>Canceled meeting w/ {
-                                            // Show peerName (who the meeting was WITH) not who cancelled
-                                            // If I was the canceller, show peerName; otherwise show cancelledByName
                                             proposals[event.uid]?.cancelledByName === userName
                                                 ? (peerName || 'Peer')
                                                 : (proposals[event.uid]?.cancelledByName || peerName || 'Peer')
@@ -1027,15 +1037,13 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                                     </button>
                                 )}
 
-                                {/* 4-button Action Bar — always rendered, only Propose/Accept/Reject hidden in History since they need a live session */}
+                                {/* 4-button Action Bar */}
                                 {(() => {
                                     const p = proposals[event.uid];
                                     const status: ProposalStatus = p?.status ?? 'none';
                                     const isMeProposer = p?.proposedBy === 'me';
-                                    // isHistory: true when viewing archived session (no live connection)
-                                    // A session loaded from History tab but live (has sessionId) stays interactive
                                     const isHistory = viewMode === 'HISTORY' && !sessionId;
-                                    const canPropose = !isHistory && (status === 'none' || status === 'rejected_by_me' || status === 'rejected_by_peer' || status === 'cancelled');
+                                    const canPropose = !isHistory && (status === 'none' || status === 'rejected_by_me' || status === 'cancelled');
                                     const canAccept = !isHistory && status === 'proposed' && !isMeProposer;
                                     const canReject = !isHistory && status === 'proposed' && !isMeProposer;
                                     const canCancel = (status === 'proposed' && isMeProposer) || status === 'accepted';
@@ -1077,9 +1085,9 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                                     );
                                 })()}
 
-                                {/* Google Calendar Private Notes Section — stopPropagation prevents clicking notes from opening Luma */}
+                                {/* Google Calendar Private Notes Section */}
                                 {(activePrivateNoteId === event.uid || privateNotes[event.uid]) && (
-                                    <div className="mt-4 pt-4 border-t border-zinc-700/50" onClick={e => e.stopPropagation()}>
+                                    <div className="pt-3 border-t border-zinc-700/50" onClick={e => e.stopPropagation()}>
                                         {privateNotes[event.uid] && activePrivateNoteId !== event.uid && (
                                             <div className="mb-3 p-3 bg-amber-500/10 rounded-lg border border-amber-500/30 text-sm">
                                                 <span className="text-xs text-amber-500/70 flex items-center gap-1 mb-1">
@@ -1110,6 +1118,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                                         )}
                                     </div>
                                 )}
+                                </div>{/* end card body wrapper */}
                             </div>
 
                         )) : (
