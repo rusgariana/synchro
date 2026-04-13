@@ -79,6 +79,34 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
     const [exportingEventId, setExportingEventId] = useState<string | null>(null);
     const [exportedEvents, setExportedEvents] = useState<Record<string, string>>({}); // uid -> googleEventId
 
+    // Sync exported event to synchro_my_exported so My Events shows green tick too
+    const syncExportToMyEvents = (uid: string, gId: string) => {
+        try {
+            const stored = JSON.parse(localStorage.getItem('synchro_my_exported') || '{}');
+            stored[uid] = gId;
+            localStorage.setItem('synchro_my_exported', JSON.stringify(stored));
+        } catch { /* silent */ }
+    };
+
+    // Bug 2: Restore active session after refresh
+    useEffect(() => {
+        if (viewMode !== 'IDLE') return;
+        try {
+            const raw = localStorage.getItem('synchro_active_session');
+            if (!raw) return;
+            const active = JSON.parse(raw);
+            if (active.sessionId && active.role && active.state && active.state !== 'RESULTS') {
+                setSessionId(active.sessionId);
+                liveSessionIdRef.current = active.sessionId;
+                setRole(active.role);
+                setState(active.state);
+                onSessionChange?.(active.sessionId);
+                addLog(`Restored session ${active.sessionId}. Waiting for peer...`);
+            }
+        } catch { /* silent */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const handleExportToGoogle = async (event: CalendarEvent) => {
         setExportingEventId(event.uid);
         try {
@@ -92,6 +120,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
 
             const gId = await createGoogleCalendarEvent(accessToken, enrichedEvent, combinedNote);
             setExportedEvents(prev => ({ ...prev, [event.uid]: gId }));
+            syncExportToMyEvents(event.uid, gId);
         } catch (e: any) {
             console.error('Failed to export to Google Calendar', e);
             if (e.message?.includes('401')) {
@@ -399,6 +428,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                                     [uid]: { ...prev[uid], status: 'accepted', googleEventId: gId }
                                 }));
                                 setExportedEvents(prev => ({ ...prev, [uid]: gId }));
+                                syncExportToMyEvents(uid, gId);
                             })
                             .catch(e => {
                                 console.error('Failed to create calendar event after acceptance', e);
@@ -488,6 +518,8 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
         setSessionId(data.sessionId);
         setRole('INITIATOR');
         setState('CREATED');
+        // Persist so session survives refresh
+        localStorage.setItem('synchro_active_session', JSON.stringify({ sessionId: data.sessionId, role: 'INITIATOR', state: 'CREATED' }));
         onSessionChange?.(data.sessionId);
         addLog(`Session created: ${data.sessionId}`);
     };
@@ -515,6 +547,8 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
             setSessionId(inputSessionId);
             setRole('JOINER');
             setState('EXCHANGING'); // Wait for Step 1
+            // Persist so session survives refresh
+            localStorage.setItem('synchro_active_session', JSON.stringify({ sessionId: inputSessionId, role: 'JOINER', state: 'EXCHANGING' }));
             onSessionChange?.(inputSessionId);
             addLog(`Joined session: ${inputSessionId}`);
             // Notify initiator with my Public Key
@@ -615,6 +649,8 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
 
         setMatches(matchedEvents);
         setState('RESULTS');
+        // Clear active session persist — session is now saved in history
+        localStorage.removeItem('synchro_active_session');
         addLog(`Found ${matchedEvents.length} matches!`);
 
         await sendMessage('STEP_3', myDoubleBlindedB);
@@ -634,6 +670,8 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
 
         setMatches(matchedEvents);
         setState('RESULTS');
+        // Clear active session persist
+        localStorage.removeItem('synchro_active_session');
         addLog(`Found ${matchedEvents.length} matches!`);
     };
 
@@ -661,6 +699,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                 );
                 setProposals(prev => ({ ...prev, [event.uid]: { ...prev[event.uid], status: 'accepted', googleEventId: gId } }));
                 setExportedEvents(prev => ({ ...prev, [event.uid]: gId }));
+                syncExportToMyEvents(event.uid, gId);
             } catch (e: any) {
                 console.error('Failed to create calendar event on accept', e);
                 if (e.message?.includes('401')) expireSession();
@@ -700,6 +739,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
             );
             setProposals(prev => ({ ...prev, [event.uid]: { ...prev[event.uid], pendingCalendarAdd: false, googleEventId: gId } }));
             setExportedEvents(prev => ({ ...prev, [event.uid]: gId }));
+            syncExportToMyEvents(event.uid, gId);
         } catch (e: any) {
             console.error('Failed to add event to calendar', e);
             if (e.message.includes('401')) {
@@ -862,6 +902,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                             <button
                                 onClick={() => {
                                     setState('IDLE');
+                                    localStorage.removeItem('synchro_active_session');
                                     setMatches([]);
                                     setProposals({});
                                     setSessionId('');
@@ -916,6 +957,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                                 onClick={(e) => {
                                     handleDeleteSession(sessionId, e);
                                     setState('IDLE');
+                                    localStorage.removeItem('synchro_active_session');
                                     setMatches([]);
                                 }}
                                 className="flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"

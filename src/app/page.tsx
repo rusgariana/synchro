@@ -18,7 +18,20 @@ function EventsList({ events, accessToken, onRefresh, isRefreshing }: { events: 
     // Export State — persisted to localStorage so refresh doesn't lose the checkmark
     const [exportingEventId, setExportingEventId] = useState<string | null>(null);
     const [exportedEvents, setExportedEvents] = useState<Record<string, string>>(() => {
-        try { return JSON.parse(localStorage.getItem('synchro_my_exported') || '{}'); } catch { return {}; }
+        try {
+            const stored = JSON.parse(localStorage.getItem('synchro_my_exported') || '{}');
+            // Also merge exports from session proposals (accepted meetings auto-exported)
+            const sessions = getSavedSessions();
+            for (const s of sessions) {
+                for (const [uid, p] of Object.entries(s.proposals || {})) {
+                    if ((p as any).googleEventId && !stored[uid]) {
+                        stored[uid] = (p as any).googleEventId;
+                    }
+                }
+            }
+            localStorage.setItem('synchro_my_exported', JSON.stringify(stored));
+            return stored;
+        } catch { return {}; }
     });
 
     // Private Notes State — persisted to localStorage
