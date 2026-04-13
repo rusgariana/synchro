@@ -81,7 +81,7 @@ function EventsList({ events, accessToken, onRefresh, isRefreshing }: { events: 
         if (googleEventId && accessToken) {
             setSavingNoteId(eventUid);
             try {
-                await savePrivateNote(accessToken, googleEventId, noteText);
+                await savePrivateNote(accessToken, googleEventId, noteText, 'My Events');
             } catch (e: any) {
                 console.error('Failed to update private note on Google Calendar', e);
                 if (e.message.includes('401')) {
@@ -662,7 +662,7 @@ export default function Home() {
                                                 </button>
                                             </div>
                                         ) : (
-                                            <MatchingSession events={events} accessToken={accessToken!} userName={customName || user?.name || 'Anonymous'} viewMode="IDLE" activeSessionId={activeSessionId} onSessionChange={setActiveSessionId} />
+                                            <MatchingSession events={events} accessToken={accessToken!} userName={customName || user?.name || 'Anonymous'} userEmail={user?.email || ''} viewMode="IDLE" activeSessionId={activeSessionId} onSessionChange={setActiveSessionId} />
                                         )
                                     )}
                                     {activeTab === 'schedule' && (
@@ -687,7 +687,7 @@ export default function Home() {
                                         )
                                     )}
                                     {activeTab === 'history' && (
-                                        <MatchingSession events={events} accessToken={accessToken!} userName={customName || user?.name || 'Anonymous'} viewMode="HISTORY" activeSessionId={activeSessionId} onSessionChange={setActiveSessionId} />
+                                        <MatchingSession events={events} accessToken={accessToken!} userName={customName || user?.name || 'Anonymous'} userEmail={user?.email || ''} viewMode="HISTORY" activeSessionId={activeSessionId} onSessionChange={setActiveSessionId} />
                                     )}
                                 </div>
                             </div>

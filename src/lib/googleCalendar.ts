@@ -46,15 +46,48 @@ export async function fetchGoogleCalendarEvents(accessToken: string): Promise<Ca
 }
 
 /**
- * Save a private note to a Google Calendar event using extendedProperties.private.
- * These notes are invisible to other users and to Google Calendar itself.
- * noteLabel is used as the section header — different labels stack as separate sections.
+ * Check whether a Google Calendar event still exists (not deleted).
+ * Returns true if the event exists, false if 404/gone.
+ */
+export async function checkGoogleEventExists(
+    accessToken: string,
+    googleEventId: string
+): Promise<boolean> {
+    try {
+        const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(googleEventId)}`;
+        const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        if (res.status === 404 || res.status === 410) return false;
+        if (!res.ok) return true; // assume exists on other errors
+        const data = await res.json();
+        return data.status !== 'cancelled';
+    } catch {
+        return true; // on network error, assume exists
+    }
+}
+
+/**
+ * Save a private note to a Google Calendar event.
+ * 
+ * All user notes are stored under ONE header:
+ *   🟣 Private Notes via Synchro
+ *   ──────────────────
+ *   • My Events: some note text
+ *   • w/ Ivan: another note text
+ *   • w/ Andrej: yet another note
+ * 
+ * `sourceTag` identifies which bullet to create/overwrite.
+ *   - "My Events" for notes made in My Events tab
+ *   - "w/ Ivan" for notes made in a session with Ivan
+ * Each sourceTag gets its own bullet line. Saving a note with the same
+ * sourceTag overwrites only that bullet, leaving others intact.
  */
 export async function savePrivateNote(
     accessToken: string,
     googleEventId: string,
     note: string,
-    noteLabel = 'Private Note _via Synchro_'
+    sourceTag = 'My Events'
 ): Promise<void> {
     const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(googleEventId)}`;
 
@@ -67,68 +100,77 @@ export async function savePrivateNote(
     const event = await getRes.json();
     const currentDesc = event.description || '';
 
-    // 2. Build the new post-separator section preserving system notes and all named user-note sections
     const separator = '\n\n-------------------------------\n';
     const isSystemNote = /^(🤝|🚫)/.test(note);
 
+    // Parse existing post-separator content
     let preSection = currentDesc;
     let systemLines: string[] = [];
-    // noteBlocks: each entry is one user note section identified by its header
-    const noteBlocks: { header: string; text: string }[] = [];
+    // bullets: array of { tag: string, text: string } representing each "• tag: text" line
+    let bullets: { tag: string; text: string }[] = [];
 
     if (currentDesc.includes('-------------------------------')) {
         const parts = currentDesc.split('-------------------------------');
         preSection = parts[0].trimEnd();
         const afterSep = (parts.slice(1).join('-------------------------------')).trimStart();
 
-        // Parse existing sections from afterSep
         const lines = afterSep.split('\n');
-        let curHeader = '';
-        let curLines: string[] = [];
-        for (let i = 0; i < lines.length; i++) {
-            if (/^(🤝|🚫)/.test(lines[i])) {
-                systemLines.push(lines[i]);
-            } else if (lines[i].startsWith('🟣')) {
-                // Save previous user block if any
-                if (curHeader) noteBlocks.push({ header: curHeader, text: curLines.join('\n') });
-                curHeader = lines[i];
-                curLines = [];
-            } else if (curHeader) {
-                curLines.push(lines[i]);
+        for (const line of lines) {
+            if (/^(🤝|🚫)/.test(line)) {
+                systemLines.push(line);
+            } else if (line.startsWith('• ')) {
+                // Parse bullet: "• My Events: note text here"
+                const colonIdx = line.indexOf(': ', 2);
+                if (colonIdx > 2) {
+                    bullets.push({ tag: line.substring(2, colonIdx), text: line.substring(colonIdx + 2) });
+                } else {
+                    // Legacy bullet without tag — keep as-is under "My Events"
+                    bullets.push({ tag: 'My Events', text: line.substring(2) });
+                }
             }
+            // Skip header lines (🟣 ...) and separator lines (──...) — they are reconstructed
         }
-        if (curHeader) noteBlocks.push({ header: curHeader, text: curLines.join('\n') });
     }
 
-    // Update whichever section this note belongs to
+    // 2. Update the right section
     if (isSystemNote) {
         if (note.startsWith('🚫')) {
-            // Cancellation: replace the matching 🤝 line
             const peerMatch = note.match(/w\/ (.+?)$/);
             const peer = peerMatch?.[1]?.trim();
             systemLines = systemLines.filter(l => !(l.startsWith('🤝') && peer && l.includes(peer)));
             systemLines.push(note);
         } else {
-            // New meeting (🤝): append only if not already listed
             if (!systemLines.includes(note)) systemLines.push(note);
         }
-    } else if (note) {
-        const sectionHeader = `🟣 ${noteLabel}`;
-        const existingIdx = noteBlocks.findIndex(b => b.header === sectionHeader);
-        if (existingIdx >= 0) {
-            noteBlocks[existingIdx].text = note;
+    } else if (note !== undefined) {
+        const existingIdx = bullets.findIndex(b => b.tag === sourceTag);
+        if (note === '') {
+            // Empty note = delete that bullet
+            if (existingIdx >= 0) bullets.splice(existingIdx, 1);
+        } else if (existingIdx >= 0) {
+            bullets[existingIdx].text = note;
         } else {
-            noteBlocks.push({ header: sectionHeader, text: note });
+            bullets.push({ tag: sourceTag, text: note });
         }
     }
 
-    // Reconstruct
-    const userSections = noteBlocks.map(b => `${b.header}\n${b.text}`).join('\n');
-    const postSection = [...systemLines, ...(userSections ? [userSections] : [])].join('\n');
-    let newDesc = preSection;
-    if (postSection) newDesc += separator + postSection;
+    // 3. Reconstruct post-separator content
+    const parts: string[] = [];
+    if (systemLines.length > 0) {
+        parts.push(...systemLines);
+    }
+    if (bullets.length > 0) {
+        parts.push('🟣 Private Notes via Synchro');
+        parts.push('──────────────────');
+        for (const b of bullets) {
+            parts.push(`• ${b.tag}: ${b.text}`);
+        }
+    }
 
-    // 3. Patch the new description and extendedProperties
+    let newDesc = preSection;
+    if (parts.length > 0) newDesc += separator + parts.join('\n');
+
+    // 4. Patch — store the note for THIS source in synchro_note for Synchro UI to read back
     const res = await fetch(url, {
         method: 'PATCH',
         headers: {
@@ -139,8 +181,6 @@ export async function savePrivateNote(
             description: newDesc,
             extendedProperties: {
                 private: {
-                    // Only store user private notes in synchro_note — NOT system notes (🤝/🚫)
-                    // System notes live only in the GCal description so they don't appear in our private note UI
                     ...(!isSystemNote ? { synchro_note: note } : {}),
                 },
             },
@@ -220,9 +260,9 @@ export async function createGoogleCalendarEvent(
     }
 
     // 2. Event does not exist, create a fresh copy
-    const url = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+    const createUrl = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
 
-    const res = await fetch(url, {
+    const res = await fetch(createUrl, {
         method: 'POST',
         headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -250,4 +290,3 @@ export async function createGoogleCalendarEvent(
     const data = await res.json();
     return data.id;
 }
-

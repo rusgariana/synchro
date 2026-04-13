@@ -20,6 +20,7 @@ export interface SavedSession {
     privateNotes?: Record<string, string>; // personal private notes keyed by event UID
     proposals?: Record<string, ProposalState>; // meeting proposal state per event UID
     label?: string; // Optional user-defined label for the session
+    peerEmail?: string; // peer's Google account email for duplicate session detection
 }
 
 const STORAGE_KEY = 'synchro_saved_sessions';

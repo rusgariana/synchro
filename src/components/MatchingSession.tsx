@@ -10,7 +10,7 @@ import {
     computeSharedSecret,
     getPublicKey
 } from '@/lib/crypto';
-import { savePrivateNote, createGoogleCalendarEvent } from '@/lib/googleCalendar';
+import { savePrivateNote, createGoogleCalendarEvent, checkGoogleEventExists } from '@/lib/googleCalendar';
 import { fetchGoogleSessionHistory, saveGoogleSessionHistory } from '@/lib/googleHistory';
 import { Loader2, Copy, Check, Lock, StickyNote, Trash2, ArrowLeft, ExternalLink, CalendarPlus, RefreshCw, Edit3, MapPin, CalendarCheck, X, Ban } from 'lucide-react';
 import { useGoogleAuth } from '@/lib/googleAuth';
@@ -20,6 +20,7 @@ interface Props {
     events: CalendarEvent[];
     accessToken: string;
     userName: string;
+    userEmail: string;
     viewMode?: 'IDLE' | 'HISTORY';
     activeSessionId?: string | null;
     onSessionChange?: (id: string | null) => void;
@@ -33,7 +34,7 @@ interface Message {
     payload: any;
 }
 
-export function MatchingSession({ events, accessToken, userName, viewMode = 'IDLE', activeSessionId, onSessionChange }: Props) {
+export function MatchingSession({ events, accessToken, userName, userEmail, viewMode = 'IDLE', activeSessionId, onSessionChange }: Props) {
     const [state, setState] = useState<State>('IDLE');
     const [displayMode, setDisplayMode] = useState<'list' | 'calendar'>('list');
     const [sessionId, setSessionId] = useState('');
@@ -44,6 +45,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
     const [sessionLabel, setSessionLabel] = useState<string>('');
     const [isEditingLabel, setIsEditingLabel] = useState<boolean>(false);
     const [peerName, setPeerName] = useState<string>('');
+    const [peerEmail, setPeerEmail] = useState<string>('');
     // Tracks the LIVE session for polling — NOT changed by loadSavedSession
     const liveSessionIdRef = useRef<string>('');
     // Tracks recently received proposal signals for visual notification flashes
@@ -121,7 +123,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
         if (googleEventId && accessToken) {
             setSavingNoteId(eventUid);
             try {
-                await savePrivateNote(accessToken, googleEventId, noteText, `Note _via Synchro_ (w/ ${peerName || 'Peer'})`);
+                await savePrivateNote(accessToken, googleEventId, noteText, `w/ ${peerName || 'Peer'}`);
             } catch (e: any) {
                 console.error('Failed to update private note on Google Calendar', e);
                 if (e.message?.includes('401')) expireSession();
@@ -178,7 +180,12 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
         if (state === 'RESULTS' && sessionId && role && matches.length > 0) {
             const label = sessionLabel || 'Synchro w/ Peer';
             const all = getSavedSessions();
-            const existingIdx = all.findIndex(s => s.id !== sessionId && (s.label || '') === label);
+            // Match by peerEmail (reliable) falling back to label (display name) for legacy sessions
+            const existingIdx = all.findIndex(s => {
+                if (s.id === sessionId) return false;
+                if (peerEmail && s.peerEmail) return s.peerEmail === peerEmail;
+                return (s.label || '') === label;
+            });
 
             if (existingIdx >= 0) {
                 // Merge current proposals/matches into the existing session
@@ -190,16 +197,16 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                 const mergedProposals = { ...existing.proposals };
                 for (const [uid, p] of Object.entries(proposals)) {
                     const existingStatus = mergedProposals[uid]?.status;
-                    // Newer status wins unless existing is a final state already
                     if (!existingStatus || existingStatus === 'none' || p.status !== 'none') {
                         mergedProposals[uid] = p;
                     }
                 }
-                const merged = { ...existing, matches: mergedMatches, proposals: mergedProposals }; // preserve original date
+                // Update label to current peer name, keep peerEmail, preserve original date
+                const merged = { ...existing, matches: mergedMatches, proposals: mergedProposals, label, peerEmail: peerEmail || existing.peerEmail };
                 saveSession(merged);
             } else {
                 // No existing session with this peer — save fresh
-                saveSession({ id: sessionId, role, date: new Date().toISOString(), matches, notes: {}, privateNotes: privateNotes || {}, proposals, label });
+                saveSession({ id: sessionId, role, date: new Date().toISOString(), matches, notes: {}, privateNotes: privateNotes || {}, proposals, label, peerEmail: peerEmail || undefined });
             }
 
             const updated = getSavedSessions();
@@ -225,10 +232,19 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
         });
         setExportedEvents(exported);
 
-        // Async: fetch private notes from GCal for each exported event
+        // Restore peerEmail if stored
+        if (s.peerEmail) setPeerEmail(s.peerEmail);
+
+        // Async: verify exported events still exist in GCal (Bug 8) and fetch private notes
         if (accessToken && Object.keys(exported).length > 0) {
             Object.entries(exported).forEach(async ([uid, gId]) => {
                 try {
+                    const exists = await checkGoogleEventExists(accessToken, gId);
+                    if (!exists) {
+                        // Event was deleted from GCal — clear export status
+                        setExportedEvents(prev => { const n = {...prev}; delete n[uid]; return n; });
+                        return;
+                    }
                     const res = await fetch(
                         `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(gId)}`,
                         { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -236,7 +252,6 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                     if (res.ok) {
                         const ev = await res.json();
                         const note = ev.extendedProperties?.private?.synchro_note;
-                        // Only load USER private notes — not system notes (🤝 meeting confirmations / 🚫 cancellations)
                         if (note && !/^(🤝|🚫)/.test(note)) {
                             setPrivateNotes(prev => ({ ...prev, [uid]: note }));
                         }
@@ -298,7 +313,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
 
             setState('EXCHANGING');
 
-            // Extract peer's display name
+            // Extract peer's display name and email
             if (lastMsg.payload.name) {
                 setPeerName(lastMsg.payload.name);
                 setSessionLabel(`Synchro w/ ${lastMsg.payload.name}`);
@@ -306,6 +321,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
             } else {
                 addLog('Peer joined. Starting handshake...');
             }
+            if (lastMsg.payload.email) setPeerEmail(lastMsg.payload.email);
 
             // Derive shared secret from peer's public key
             if (lastMsg.payload.publicKey) {
@@ -320,7 +336,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
 
         if (state === 'EXCHANGING') {
             if (role === 'JOINER' && lastMsg.type === 'STEP_1') {
-                // Extract peer's display name from STEP_1
+                // Extract peer's display name and email from STEP_1
                 if (lastMsg.payload.name) {
                     setPeerName(lastMsg.payload.name);
                     setSessionLabel(`Synchro w/ ${lastMsg.payload.name}`);
@@ -328,6 +344,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                 } else {
                     addLog('Received Step 1 from Initiator.');
                 }
+                if (lastMsg.payload.email) setPeerEmail(lastMsg.payload.email);
 
                 if (lastMsg.payload.publicKey) {
                     const secret = computeSharedSecret(lastMsg.payload.publicKey, privateKey);
@@ -449,10 +466,12 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
     // When a live match result arrives, check if we already have a session with this peer
     useEffect(() => {
         if (state === 'RESULTS' && peerName && viewMode !== 'HISTORY') {
-            const existing = savedSessions.find(s =>
-                s.id !== sessionId &&
-                (s.label || '').toLowerCase().includes(peerName.toLowerCase())
-            );
+            const existing = savedSessions.find(s => {
+                if (s.id === sessionId) return false;
+                // Match by email (reliable) then fall back to name
+                if (peerEmail && s.peerEmail) return s.peerEmail === peerEmail;
+                return (s.label || '').toLowerCase().includes(peerName.toLowerCase());
+            });
             if (existing) {
                 setDuplicateWarning({ label: peerName, session: existing });
             }
@@ -502,7 +521,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
             addLog(`Joined session: ${inputSessionId}`);
             // Notify initiator with my Public Key
             const myPub = getPublicKey(privateKey);
-            await sendMessage('JOIN', { publicKey: myPub, name: userName }, inputSessionId);
+            await sendMessage('JOIN', { publicKey: myPub, name: userName, email: userEmail }, inputSessionId);
         } else {
             alert('Session not found');
         }
@@ -549,7 +568,8 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
         await sendMessage('STEP_1', {
             blinded: blinded.map(b => b.val),
             publicKey: myPub,
-            name: userName
+            name: userName,
+            email: userEmail
         });
         addLog('Sent blinded set to peer.');
     };
@@ -755,7 +775,7 @@ export function MatchingSession({ events, accessToken, userName, viewMode = 'IDL
                         </div>
                     ) : (
                         <div className="grid gap-2 mt-2">
-                            {savedSessions.map(s => (
+                            {[...savedSessions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map(s => (
                                 <div 
                                     key={s.id}
                                     onClick={() => loadSavedSession(s)}
