@@ -1,16 +1,19 @@
-export const runtime = 'edge';
-
 import { NextRequest, NextResponse } from 'next/server';
 
-// Persist sessions across Next.js hot-module reloading in dev mode.
-// Without this, every file save wipes the in-memory session store.
+// Pin to a single region so all users hit the same serverless instance
+export const preferredRegion = 'iad1';
+
+// Force long-running serverless function to stay warm longer
+export const maxDuration = 60;
+
+// Persist sessions across invocations in the same warm instance.
 const globalStore = globalThis as any;
 if (!globalStore.__synchro_sessions) {
     globalStore.__synchro_sessions = {} as Record<string, any>;
 }
 const sessions: Record<string, any> = globalStore.__synchro_sessions;
 
-const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+const SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 // Cleanup expired sessions on each request
 function cleanupSessions() {
@@ -52,8 +55,14 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'send') {
+        // If the session was lost (cold start), auto-recreate it so the message isn't lost.
+        // This ensures proposals sent minutes after matching still get through.
         if (!sessions[sessionId]) {
-            return NextResponse.json({ error: 'Session expired. Please start a new session.' }, { status: 404 });
+            sessions[sessionId] = {
+                id: sessionId,
+                created: Date.now(),
+                messages: [],
+            };
         }
         sessions[sessionId].messages.push(payload);
         return NextResponse.json({ success: true });
@@ -61,7 +70,9 @@ export async function POST(request: NextRequest) {
 
     if (action === 'poll') {
         if (!sessions[sessionId]) {
-            return NextResponse.json({ error: 'Session expired.' }, { status: 404 });
+            // Session doesn't exist on this instance — return empty messages instead of error.
+            // The peer's next 'send' will auto-create the session.
+            return NextResponse.json({ messages: [] });
         }
         // Return all messages for now. Client filters what it has seen.
         return NextResponse.json({ messages: sessions[sessionId].messages });

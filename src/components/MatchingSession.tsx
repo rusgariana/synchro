@@ -368,11 +368,12 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                     const { uid, proposerName: pName } = msg.payload;
                     setFlashedEvents(prev => ({ ...prev, [uid]: 'positive' }));
                     setTimeout(() => setFlashedEvents(prev => { const n = {...prev}; delete n[uid]; return n; }), 3000);
-                    // Don't overwrite a final state (accepted/cancelled/rejected) with a re-delivered PROPOSAL
+                    // Only block new proposals if meeting was already accepted (truly final)
+                    // Allow re-proposals after rejection or cancellation
                     setProposals(prev => {
                         const existing = prev[uid];
-                        if (existing && existing.status !== 'proposed' && existing.status !== undefined) {
-                            return prev; // already has a final state, ignore
+                        if (existing && existing.status === 'accepted') {
+                            return prev; // meeting already confirmed, ignore
                         }
                         return { ...prev, [uid]: { status: 'proposed', proposedBy: 'peer', proposerName: pName } };
                     });
@@ -527,27 +528,32 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
 
     const sendMessage = async (type: string, payload: any, sid?: string) => {
         const targetSessionId = sid || sessionId;
+        const maxRetries = 3;
 
-        try {
-            const res = await fetch('/api/signal', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'send',
-                    sessionId: targetSessionId,
-                    payload: { type, sender: role, payload }
-                }),
-            });
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                const res = await fetch('/api/signal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'send',
+                        sessionId: targetSessionId,
+                        payload: { type, sender: role, payload }
+                    }),
+                });
 
-            if (!res.ok) {
-                console.error('[sendMessage] Failed:', res.status, res.statusText);
-                const errorData = await res.json().catch(() => ({}));
-                console.error('[sendMessage] Error data:', errorData);
-            } else {
+                if (res.ok) return; // success — exit
 
+                console.error(`[sendMessage] Attempt ${attempt + 1} failed:`, res.status, res.statusText);
+                if (attempt < maxRetries - 1) {
+                    await new Promise(r => setTimeout(r, 1000)); // wait 1s before retry
+                }
+            } catch (error) {
+                console.error(`[sendMessage] Attempt ${attempt + 1} exception:`, error);
+                if (attempt < maxRetries - 1) {
+                    await new Promise(r => setTimeout(r, 1000));
+                }
             }
-        } catch (error) {
-            console.error('[sendMessage] Exception:', error);
         }
     };
 
