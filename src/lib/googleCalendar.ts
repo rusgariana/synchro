@@ -71,7 +71,7 @@ export async function checkGoogleEventExists(
  * Save a private note to a Google Calendar event.
  * 
  * All user notes are stored under ONE header:
- *   🟣 Private Notes via Synchro
+ *   🟣 Private Notes 𝘷𝘪𝘢 𝘚𝘺𝘯𝘤𝘩𝘳𝘰
  *   ──────────────────
  *   • My Events: some note text
  *   • w/ Ivan: another note text

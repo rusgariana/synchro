@@ -391,7 +391,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                     // Find the event and create it in our calendar
                     const event = matches.find(e => e.uid === uid);
                     if (event && accessToken) {
-                        createGoogleCalendarEvent(accessToken, event, `🤝 Meeting ${resolvedPeerName} via Synchro`)
+                        createGoogleCalendarEvent(accessToken, event, `🤝 Meeting ${resolvedPeerName} 𝘷𝘪𝘢 𝘚𝘺𝘯𝘤𝘩𝘳𝘰`)
                             .then(gId => {
                                 setProposals(prev => ({
                                     ...prev,
