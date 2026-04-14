@@ -53,6 +53,8 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
     const sentMessagesRef = useRef<any[]>([]);
     // Tracks recently received proposal signals for visual notification flashes
     const [flashedEvents, setFlashedEvents] = useState<Record<string, 'positive' | 'negative'>>({});
+    // Tracks whether the user is currently viewing a loaded session (suppresses duplicate notifications)
+    const isViewingRef = useRef(false);
 
     const { expireSession } = useGoogleAuth();
 
@@ -91,23 +93,10 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
         } catch { /* silent */ }
     };
 
-    // Bug 2: Restore active session after refresh
+    // On refresh, reset to IDLE. The server-side session stays alive for 4h,
+    // so the peer can still join with the code. We just don't restore the UI.
     useEffect(() => {
-        if (viewMode !== 'IDLE') return;
-        try {
-            const raw = localStorage.getItem('synchro_active_session');
-            if (!raw) return;
-            const active = JSON.parse(raw);
-            if (active.sessionId && active.role && active.state && active.state !== 'RESULTS') {
-                setSessionId(active.sessionId);
-                liveSessionIdRef.current = active.sessionId;
-                setRole(active.role);
-                setState(active.state);
-                onSessionChange?.(active.sessionId);
-                addLog(`Restored session ${active.sessionId}. Waiting for peer...`);
-            }
-        } catch { /* silent */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        localStorage.removeItem('synchro_active_session');
     }, []);
 
     const handleExportToGoogle = async (event: CalendarEvent) => {
@@ -258,8 +247,8 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
     }, [state, sessionId, role, matches, proposals, sessionLabel, accessToken]);
 
     const loadSavedSession = (s: SavedSession) => {
-        // Clear processed messages so new signals from peer are picked up
-        processedMsgIdsRef.current = new Set();
+        // Mark as viewing to suppress duplicate notifications from old messages
+        isViewingRef.current = true;
         setSessionId(s.id);
         setRole(s.role as any);
         setMatches(s.matches);
@@ -419,8 +408,9 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
 
         // Handle Meeting Proposals (after RESULTS)
         if (state === 'RESULTS') {
-            // Helper: track notification for this session
+            // Helper: track notification for this session (skip if user is viewing it)
             const addNotification = () => {
+                if (isViewingRef.current) return;
                 try {
                     const notifs = JSON.parse(localStorage.getItem('synchro_notifications') || '{}');
                     notifs[sessionId] = (notifs[sessionId] || 0) + 1;
@@ -453,7 +443,13 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                     }));
                     const event = matches.find(e => e.uid === uid);
                     if (event && accessToken) {
-                        createGoogleCalendarEvent(accessToken, event, `🤝 Meeting ${resolvedPeerName} 𝘷𝘪𝘢 𝘚𝘺𝘯𝘤𝘩𝘳𝘰`)
+                        // Enrich event description from current calendar
+                        const enriched = { ...event };
+                        if (!enriched.description) {
+                            const fresh = events.find(e => e.uid === uid);
+                            if (fresh?.description) enriched.description = fresh.description;
+                        }
+                        createGoogleCalendarEvent(accessToken, enriched, `🤝 Meeting ${resolvedPeerName} 𝘷𝘪𝘢 𝘚𝘺𝘯𝘤𝘩𝘳𝘰`)
                             .then(gId => {
                                 setProposals(prev => ({
                                     ...prev,
@@ -739,8 +735,14 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
         // Create on our own calendar
         if (accessToken) {
             try {
+                // Enrich event description from current calendar
+                const enriched = { ...event };
+                if (!enriched.description) {
+                    const fresh = events.find(e => e.uid === event.uid);
+                    if (fresh?.description) enriched.description = fresh.description;
+                }
                 const gId = await createGoogleCalendarEvent(
-                    accessToken, event,
+                    accessToken, enriched,
                     `🤝 Meeting ${proposals[event.uid]?.proposerName || 'Peer'} 𝘷𝘪𝘢 𝘚𝘺𝘯𝘤𝘩𝘳𝘰`
                 );
                 setProposals(prev => ({ ...prev, [event.uid]: { ...prev[event.uid], status: 'accepted', googleEventId: gId } }));
@@ -956,6 +958,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                             <button
                                 onClick={() => {
                                     setState('IDLE');
+                                    isViewingRef.current = false;
                                     localStorage.removeItem('synchro_active_session');
                                     setMatches([]);
                                     setProposals({});
@@ -1011,6 +1014,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                                 onClick={(e) => {
                                     handleDeleteSession(sessionId, e);
                                     setState('IDLE');
+                                    isViewingRef.current = false;
                                     localStorage.removeItem('synchro_active_session');
                                     setMatches([]);
                                 }}
