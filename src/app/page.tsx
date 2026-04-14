@@ -680,15 +680,32 @@ export default function Home() {
                             <div className="w-full flex flex-col gap-6 items-center animate-in fade-in zoom-in-95 duration-500">
                                 <div className="w-full flex justify-start overflow-x-auto">
                                     <nav className="flex items-center gap-1 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800 flex-nowrap min-w-max">
-                                        {(['match', 'schedule', 'history'] as const).map(tab => (
+                                        {(['match', 'schedule', 'history'] as const).map(tab => {
+                                            // Compute notification count for Sessions tab
+                                            let badgeCount = 0;
+                                            if (tab === 'history') {
+                                                const allSessions = getSavedSessions();
+                                                for (const s of allSessions) {
+                                                    for (const p of Object.values(s.proposals || {})) {
+                                                        if (p.status === 'proposed' && p.proposedBy === 'peer') badgeCount++;
+                                                    }
+                                                }
+                                            }
+                                            return (
                                             <button
                                                 key={tab}
                                                 onClick={() => setActiveTab(tab)}
-                                                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'}`}
+                                                className={`relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'}`}
                                             >
                                                 {tab === 'match' ? 'Match' : tab === 'schedule' ? 'My Events' : 'Sessions'}
+                                                {badgeCount > 0 && (
+                                                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                                                        {badgeCount}
+                                                    </span>
+                                                )}
                                             </button>
-                                        ))}
+                                            );
+                                        })}
                                     </nav>
                                 </div>
                                 <div className="w-full flex justify-center">
@@ -707,7 +724,7 @@ export default function Home() {
                                                 </button>
                                             </div>
                                         ) : (
-                                            <MatchingSession events={events} accessToken={accessToken!} userName={customName || user?.name || 'Anonymous'} userEmail={user?.email || ''} viewMode="IDLE" activeSessionId={activeSessionId} onSessionChange={setActiveSessionId} />
+                                            <MatchingSession events={events} accessToken={accessToken!} userName={customName || user?.name || 'Anonymous'} userEmail={user?.email || ''} viewMode="IDLE" activeSessionId={activeSessionId} onSessionChange={setActiveSessionId} onSwitchToSessions={() => setActiveTab('history')} />
                                         )
                                     )}
                                     {activeTab === 'schedule' && (

@@ -24,6 +24,7 @@ interface Props {
     viewMode?: 'IDLE' | 'HISTORY';
     activeSessionId?: string | null;
     onSessionChange?: (id: string | null) => void;
+    onSwitchToSessions?: () => void;
 }
 
 type State = 'IDLE' | 'CREATED' | 'JOINING' | 'EXCHANGING' | 'COMPUTING' | 'RESULTS';
@@ -34,7 +35,7 @@ interface Message {
     payload: any;
 }
 
-export function MatchingSession({ events, accessToken, userName, userEmail, viewMode = 'IDLE', activeSessionId, onSessionChange }: Props) {
+export function MatchingSession({ events, accessToken, userName, userEmail, viewMode = 'IDLE', activeSessionId, onSessionChange, onSwitchToSessions }: Props) {
     const [state, setState] = useState<State>('IDLE');
     const [displayMode, setDisplayMode] = useState<'list' | 'calendar'>('list');
     const [sessionId, setSessionId] = useState('');
@@ -307,23 +308,24 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
 
     const [joinerDoubleBlindedA, setJoinerDoubleBlindedA] = useState<string[]>([]);
 
-    // Track how many messages we've already processed so we never re-process old ones
-    const processedCountRef = useRef(0);
+    // Track processed messages by content hash so gossip reordering doesn't cause re-processing
+    const processedMsgIdsRef = useRef<Set<string>>(new Set());
 
     const handleMessages = useCallback(async (messages: Message[]) => {
-
-        // Only process messages we haven't seen yet
-        const newMessages = messages.slice(processedCountRef.current);
-        if (newMessages.length > 0) {
-            processedCountRef.current = messages.length;
-        }
 
         const myId = role;
         if (!myId) return;
 
-        const relevant = newMessages.filter(m => m.sender !== myId);
+        // Filter out our own messages and already-processed messages
+        const newMessages = messages.filter(m => {
+            if (m.sender === myId) return false;
+            const msgId = `${m.type}:${m.sender}:${JSON.stringify(m.payload)}`;
+            if (processedMsgIdsRef.current.has(msgId)) return false;
+            processedMsgIdsRef.current.add(msgId);
+            return true;
+        });
 
-        if (relevant.length === 0) return;
+        if (newMessages.length === 0) return;
 
         // Process all new messages? Or just the last one?
         // For notes, we might receive multiple.
@@ -334,7 +336,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
         // Simplified: Just look at the last one for state transitions.
         // For notes, we need to scan all.
 
-        const lastMsg = relevant[relevant.length - 1];
+        const lastMsg = newMessages[newMessages.length - 1];
 
 
         if (state === 'CREATED' && lastMsg.type === 'JOIN') {
@@ -394,7 +396,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
 
         // Handle Meeting Proposals (after RESULTS)
         if (state === 'RESULTS') {
-            for (const msg of relevant) {
+            for (const msg of newMessages) {
                 if (msg.type === 'PROPOSAL') {
                     const { uid, proposerName: pName } = msg.payload;
                     setFlashedEvents(prev => ({ ...prev, [uid]: 'positive' }));
@@ -503,10 +505,14 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                 return false;
             });
             if (existing) {
-                // Auto-redirect to existing session
+                // Auto-redirect to existing session in Sessions tab
                 addLog(`Previous session with ${peerName} found — redirecting you now.`);
+                setDuplicateWarning({ label: peerName, session: existing });
                 setTimeout(() => {
+                    onSwitchToSessions?.();
                     onSessionChange?.(existing.id);
+                    // Load the session directly
+                    loadSavedSession(existing);
                 }, 1500);
             }
         }
@@ -837,8 +843,11 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                                     className="flex items-center justify-between py-4 border-b last:border-0 border-zinc-800/50 hover:bg-zinc-800/40 cursor-pointer transition-colors group px-4 rounded-xl"
                                 >
                                     <div className="flex-1 text-left">
-                                        <div className="font-bold text-zinc-200 group-hover:text-primary transition-colors">
+                                        <div className="font-bold text-zinc-200 group-hover:text-primary transition-colors flex items-center gap-2">
                                             {s.label?.includes('Session with Peer') ? 'Synchro w/ Peer' : (s.label || 'Synchro w/ Peer')}
+                                            {Object.values(s.proposals || {}).some(p => p.status === 'proposed' && p.proposedBy === 'peer') && (
+                                                <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+                                            )}
                                         </div>
                                         <div className="text-xs text-zinc-500 mt-1.5 flex items-center gap-3">
                                             <span>{new Date(s.date).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})}</span>
