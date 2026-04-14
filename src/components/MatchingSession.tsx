@@ -48,6 +48,8 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
     const [peerEmail, setPeerEmail] = useState<string>('');
     // Tracks the LIVE session for polling — NOT changed by loadSavedSession
     const liveSessionIdRef = useRef<string>('');
+    // Tracks all messages we've sent — used for gossip-based cold-start recovery
+    const sentMessagesRef = useRef<any[]>([]);
     // Tracks recently received proposal signals for visual notification flashes
     const [flashedEvents, setFlashedEvents] = useState<Record<string, 'positive' | 'negative'>>({});
 
@@ -474,7 +476,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                 const res = await fetch('/api/signal', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'poll', sessionId: pollId }),
+                    body: JSON.stringify({ action: 'poll', sessionId: pollId, sentMessages: sentMessagesRef.current }),
                 });
                 if (!res.ok) return;
                 const data = await res.json();
@@ -501,7 +503,11 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                 return false;
             });
             if (existing) {
-                setDuplicateWarning({ label: peerName, session: existing });
+                // Auto-redirect to existing session
+                addLog(`Previous session with ${peerName} found — redirecting you now.`);
+                setTimeout(() => {
+                    onSessionChange?.(existing.id);
+                }, 1500);
             }
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -576,7 +582,11 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                     }),
                 });
 
-                if (res.ok) return; // success — exit
+                if (res.ok) {
+                    // Track for gossip-based cold-start recovery
+                    sentMessagesRef.current.push({ type, sender: role, payload });
+                    return;
+                }
 
                 console.error(`[sendMessage] Attempt ${attempt + 1} failed:`, res.status, res.statusText);
                 if (attempt < maxRetries - 1) {

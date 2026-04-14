@@ -25,6 +25,19 @@ function cleanupSessions() {
     }
 }
 
+// Dedup helper: add messages that don't already exist in the session
+function mergeMessages(session: any, incoming: any[]) {
+    for (const msg of incoming) {
+        const isDup = session.messages.some((m: any) =>
+            m.type === msg.type && m.sender === msg.sender &&
+            JSON.stringify(m.payload) === JSON.stringify(msg.payload)
+        );
+        if (!isDup) {
+            session.messages.push(msg);
+        }
+    }
+}
+
 export async function POST(request: NextRequest) {
     const body = await request.json();
     const { action, sessionId, payload } = body;
@@ -56,7 +69,6 @@ export async function POST(request: NextRequest) {
 
     if (action === 'send') {
         // If the session was lost (cold start), auto-recreate it so the message isn't lost.
-        // This ensures proposals sent minutes after matching still get through.
         if (!sessions[sessionId]) {
             sessions[sessionId] = {
                 id: sessionId,
@@ -69,12 +81,19 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'poll') {
+        // Auto-create if cold start
         if (!sessions[sessionId]) {
-            // Session doesn't exist on this instance — return empty messages instead of error.
-            // The peer's next 'send' will auto-create the session.
-            return NextResponse.json({ messages: [] });
+            sessions[sessionId] = {
+                id: sessionId,
+                created: Date.now(),
+                messages: [],
+            };
         }
-        // Return all messages for now. Client filters what it has seen.
+        // Gossip: client sends its own messages for cold-start recovery
+        const clientMessages = body.sentMessages || [];
+        if (clientMessages.length > 0) {
+            mergeMessages(sessions[sessionId], clientMessages);
+        }
         return NextResponse.json({ messages: sessions[sessionId].messages });
     }
 

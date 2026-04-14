@@ -82,7 +82,18 @@ function EventsList({ events, accessToken, onRefresh, isRefreshing }: { events: 
         if (!accessToken) return alert('Please sign in to Google to export events.');
         setExportingEventId(event.uid);
         try {
-            const combinedNote = privateNotes[event.uid] || '';
+            // Build note: private note + meeting markers from saved sessions
+            let combinedNote = privateNotes[event.uid] || '';
+            // Include meeting system notes (🤝 Meeting w/ peer) from sessions
+            const peers = meetingWith[event.uid];
+            if (peers && peers.length > 0) {
+                for (const peer of peers) {
+                    const marker = `🤝 Meeting ${peer} 𝘷𝘪𝘢 𝘚𝘺𝘯𝘤𝘩𝘳𝘰`;
+                    if (!combinedNote.includes(marker)) {
+                        combinedNote = marker + (combinedNote ? '\n' + combinedNote : '');
+                    }
+                }
+            }
             const gId = await createGoogleCalendarEvent(accessToken, event, combinedNote);
             setExportedEvents(prev => {
                 const next = { ...prev, [event.uid]: gId };
@@ -675,7 +686,7 @@ export default function Home() {
                                                 onClick={() => setActiveTab(tab)}
                                                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'}`}
                                             >
-                                                {tab === 'match' ? 'Match' : tab === 'schedule' ? 'My Events' : 'History'}
+                                                {tab === 'match' ? 'Match' : tab === 'schedule' ? 'My Events' : 'Sessions'}
                                             </button>
                                         ))}
                                     </nav>
