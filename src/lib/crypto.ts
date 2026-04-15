@@ -5,7 +5,10 @@ import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils';
 
 // --- PSI Logic ---
 
-// Generate a random private scalar
+function privateKeyToScalar(key: Uint8Array): bigint {
+    return BigInt('0x' + bytesToHex(key));
+}
+
 export function generatePrivateKey(): Uint8Array {
     return secp256k1.utils.randomPrivateKey();
 }
@@ -15,21 +18,16 @@ export function hashToPoint(data: string) {
     return hashToCurve(utf8ToBytes(data));
 }
 
-// Blind a point: P -> a*P
 export function blindPoint(pointHex: string, privateKey: Uint8Array): string {
     const point = secp256k1.ProjectivePoint.fromHex(pointHex);
-    const scalar = BigInt('0x' + bytesToHex(privateKey));
-    const blinded = point.multiply(scalar);
+    const blinded = point.multiply(privateKeyToScalar(privateKey));
     return blinded.toHex(true);
 }
 
-// Blind a string directly: H(s) -> a*H(s)
 export function blindString(str: string, privateKey: Uint8Array): string {
     const point = hashToCurve(utf8ToBytes(str));
-    const scalar = BigInt('0x' + bytesToHex(privateKey));
-    // H2CPoint type doesn't expose toHex but the underlying secp256k1 point does
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (point.multiply(scalar) as any).toHex(true);
+    return (point.multiply(privateKeyToScalar(privateKey)) as any).toHex(true);
 }
 
 // --- Encryption (AES-GCM) ---
@@ -79,11 +77,9 @@ export async function decryptNote(encrypted: string, sharedSecretHex: string): P
 }
 
 export function getPublicKey(privateKey: Uint8Array): string {
-    const pubKey = secp256k1.getPublicKey(privateKey, true);
-    return typeof pubKey === 'string' ? pubKey : bytesToHex(pubKey);
+    return bytesToHex(secp256k1.getPublicKey(privateKey, true));
 }
 
-// Derive a shared secret using ECDH + HKDF-SHA256
 export function computeSharedSecret(theirPublicKeyHex: string, myPrivateKey: Uint8Array): string {
     if (!theirPublicKeyHex || typeof theirPublicKeyHex !== 'string') {
         throw new Error(`Invalid public key: ${typeof theirPublicKeyHex}`);
@@ -92,7 +88,6 @@ export function computeSharedSecret(theirPublicKeyHex: string, myPrivateKey: Uin
     const cleanKey = theirPublicKeyHex.trim().replace(/^0x/, '');
     const shared = secp256k1.getSharedSecret(myPrivateKey, cleanKey); // 33-byte compressed point
     const xOnly = shared.slice(1); // x-coordinate only (RFC 6090 / NIST SP 800-56A); drop parity prefix
-    // HKDF-SHA256: derive 32-byte key with domain-separated info label
     const derived = hkdf(sha256, xOnly, undefined, utf8ToBytes('synchro-note-encryption-v1'), 32);
     return bytesToHex(derived);
 }

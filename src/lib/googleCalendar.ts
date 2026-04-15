@@ -1,43 +1,18 @@
 import { CalendarEvent } from './calendar';
+import { makeLocalStorageAES } from './aesLocalStorage';
 
-const NOTE_KEY_STORAGE = 'synchro_note_key';
-const ENC_PREFIX = 'enc:';
+const noteAES = makeLocalStorageAES('synchro_note_key');
 
-async function getNoteKey(): Promise<CryptoKey> {
-    const stored = localStorage.getItem(NOTE_KEY_STORAGE);
-    if (stored) {
-        const raw = Uint8Array.from(atob(stored), c => c.charCodeAt(0));
-        return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
-    }
-    const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
-    const exported = await crypto.subtle.exportKey('raw', key);
-    localStorage.setItem(NOTE_KEY_STORAGE, btoa(Array.from(new Uint8Array(exported), c => String.fromCharCode(c)).join('')));
-    return key;
-}
-
-async function encryptNoteText(text: string): Promise<string> {
-    const key = await getNoteKey();
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encoded = new TextEncoder().encode(text);
-    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
-    const combined = new Uint8Array(iv.byteLength + ciphertext.byteLength);
-    combined.set(iv, 0);
-    combined.set(new Uint8Array(ciphertext), iv.byteLength);
-    return ENC_PREFIX + btoa(Array.from(combined, c => String.fromCharCode(c)).join(''));
-}
-
-async function decryptNoteText(stored: string): Promise<string> {
-    if (!stored.startsWith(ENC_PREFIX)) return stored + ' (legacy)';
-    try {
-        const key = await getNoteKey();
-        const combined = Uint8Array.from(atob(stored.slice(ENC_PREFIX.length)), c => c.charCodeAt(0));
-        const iv = combined.slice(0, 12);
-        const ciphertext = combined.slice(12);
-        const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
-        return new TextDecoder().decode(decrypted);
-    } catch {
-        return stored + ' (decryption failed)';
-    }
+interface GCalItem {
+    id: string;
+    iCalUID?: string;
+    summary?: string;
+    start?: { dateTime?: string; date?: string };
+    end?: { dateTime?: string; date?: string };
+    description?: string;
+    location?: string;
+    htmlLink?: string;
+    extendedProperties?: { private?: { synchro_note?: string } };
 }
 
 /**
@@ -66,25 +41,18 @@ export async function fetchGoogleCalendarEvents(accessToken: string): Promise<Ca
         throw new Error(`Google Calendar API error ${res.status}: ${err}`);
     }
 
-    interface GCalItem {
-        id: string;
-        iCalUID?: string;
-        summary?: string;
-        start?: { dateTime?: string; date?: string };
-        end?: { dateTime?: string; date?: string };
-        description?: string;
-        location?: string;
-        htmlLink?: string;
-        extendedProperties?: { private?: { synchro_note?: string } };
-    }
-
     const data = await res.json();
 
-    const items = (data.items as GCalItem[] ?? []).filter(item => item.start);
+    const items = ((data.items ?? []) as GCalItem[]).filter(item => item.start);
 
-    const events = await Promise.all(
+    return Promise.all(
         items.map(async (item): Promise<CalendarEvent> => {
             const rawNote = item.extendedProperties?.private?.synchro_note;
+            let privateNote: string | undefined;
+            if (rawNote) {
+                // null = legacy plaintext note stored before encryption was added — use as-is
+                privateNote = await noteAES.decrypt(rawNote) ?? rawNote;
+            }
             return {
                 uid: item.iCalUID ?? item.id,
                 title: item.summary ?? '(No Title)',
@@ -94,12 +62,10 @@ export async function fetchGoogleCalendarEvents(accessToken: string): Promise<Ca
                 location: item.location,
                 url: item.htmlLink,
                 googleEventId: item.id,
-                privateNote: rawNote ? await decryptNoteText(rawNote) : undefined,
+                privateNote,
             };
         })
     );
-
-    return events.filter(e => e.start && e.end);
 }
 
 /**
@@ -113,7 +79,7 @@ export async function savePrivateNote(
 ): Promise<void> {
     const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(googleEventId)}`;
 
-    const encryptedNote = await encryptNoteText(note);
+    const encryptedNote = await noteAES.encrypt(note);
 
     const res = await fetch(url, {
         method: 'PATCH',

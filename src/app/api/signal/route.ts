@@ -14,9 +14,14 @@ const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_SESSIONS = 100;
 const MAX_MESSAGES_PER_SESSION = 500;
 const MAX_PAYLOAD_BYTES = 64 * 1024; // 64 KB
+const CLEANUP_INTERVAL_MS = 60 * 1000; // run at most once per minute
+
+let lastCleanup = 0;
 
 function cleanupSessions() {
     const now = Date.now();
+    if (now - lastCleanup < CLEANUP_INTERVAL_MS) return;
+    lastCleanup = now;
     for (const id of Object.keys(sessions)) {
         if (now - sessions[id].createdAt > SESSION_TTL_MS) {
             delete sessions[id];
@@ -34,6 +39,10 @@ function checkOrigin(request: NextRequest): NextResponse | null {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
     return null;
+}
+
+function requireSession(id: string): NextResponse | null {
+    return sessions[id] ? null : NextResponse.json({ error: 'Session not found' }, { status: 404 });
 }
 
 export async function POST(request: NextRequest) {
@@ -56,20 +65,14 @@ export async function POST(request: NextRequest) {
             messages: [],
         };
         return NextResponse.json({ sessionId: newSessionId });
-    }
-
-    if (action === 'join') {
-        if (!sessions[sessionId]) {
-            return NextResponse.json({ error: 'Session not found' }, { status: 404 });
-        }
+    } else if (action === 'join') {
+        const err = requireSession(sessionId);
+        if (err) return err;
         return NextResponse.json({ success: true });
-    }
-
-    if (action === 'send') {
-        if (!sessions[sessionId]) {
-            return NextResponse.json({ error: 'Session not found' }, { status: 404 });
-        }
-        if (JSON.stringify(payload).length > MAX_PAYLOAD_BYTES) {
+    } else if (action === 'send') {
+        const err = requireSession(sessionId);
+        if (err) return err;
+        if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > MAX_PAYLOAD_BYTES) {
             return NextResponse.json({ error: 'Payload too large' }, { status: 413 });
         }
         if (sessions[sessionId].messages.length >= MAX_MESSAGES_PER_SESSION) {
@@ -77,12 +80,9 @@ export async function POST(request: NextRequest) {
         }
         sessions[sessionId].messages.push(payload);
         return NextResponse.json({ success: true });
-    }
-
-    if (action === 'poll') {
-        if (!sessions[sessionId]) {
-            return NextResponse.json({ error: 'Session not found' }, { status: 404 });
-        }
+    } else if (action === 'poll') {
+        const err = requireSession(sessionId);
+        if (err) return err;
         return NextResponse.json({ messages: sessions[sessionId].messages });
     }
 

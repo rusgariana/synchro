@@ -95,8 +95,8 @@ export function MatchingSession({ events, accessToken }: Props) {
     const roleRef = useRef(role);
     const sharedSecretRef = useRef(sharedSecret);
     const joinerDoubleBlindedARef = useRef<string[]>([]);
-    const noteSendSeqRef = useRef(0);       // monotonically increasing send counter (ALP-184)
-    const noteLastSeqRef = useRef(-1);      // last accepted receive seq from peer
+    const noteSendSeqRef = useRef(0);   // monotonically increasing send counter
+    const noteLastSeqRef = useRef(-1);  // last accepted receive seq from peer
     useEffect(() => { stateRef.current = state; }, [state]);
     useEffect(() => { roleRef.current = role; }, [role]);
     useEffect(() => { sharedSecretRef.current = sharedSecret; }, [sharedSecret]);
@@ -146,14 +146,13 @@ export function MatchingSession({ events, accessToken }: Props) {
     useEffect(() => {
         if (state === 'RESULTS' && sessionId && role) {
             saveSession({ id: sessionId, role, date: new Date().toISOString(), matches, notes })
-                .then(() => getSavedSessions())
                 .then(setSavedSessions);
         }
     }, [state, sessionId, role, matches, notes]);
 
     const loadSavedSession = (s: SavedSession) => {
         setSessionId(s.id);
-        setRole(s.role); // SavedSession.role is now 'INITIATOR' | 'JOINER' — no cast needed
+        setRole(s.role);
         setMatches(s.matches);
         setNotes(s.notes);
         setState('RESULTS');
@@ -162,8 +161,7 @@ export function MatchingSession({ events, accessToken }: Props) {
     const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
         if (confirm('Delete this saved session?')) {
-            await deleteSession(id);
-            getSavedSessions().then(setSavedSessions);
+            deleteSession(id).then(setSavedSessions);
         }
     };
 
@@ -174,7 +172,7 @@ export function MatchingSession({ events, accessToken }: Props) {
         const currentState = stateRef.current;
         if (!myId) return;
 
-        // Validate and type-narrow all messages at the boundary (ALP-191)
+        // Validate and type-narrow all messages at the boundary
         const messages = rawMessages.flatMap(m => {
             const parsed = parseMessage(m);
             return parsed ? [parsed] : [];
@@ -214,7 +212,7 @@ export function MatchingSession({ events, accessToken }: Props) {
             }
         }
 
-        // Handle Notes — active in RESULTS state; seq enforced for replay protection (ALP-184)
+        // Handle Notes — active in RESULTS state; seq enforced for replay protection
         if (currentState === 'RESULTS') {
             for (const msg of relevant) {
                 if (msg.type === 'NOTE') {
@@ -348,7 +346,7 @@ export function MatchingSession({ events, accessToken }: Props) {
 
         const myDoubleBlindedB = theirBlindedB.map(val => blindPoint(val, psiKey));
 
-        // Map from double-blinded Initiator value → Initiator event (ALP-181: use Map not index)
+        // Map from double-blinded Initiator value → Initiator event
         const initiatorMap = new Map<string, CalendarEvent>(
             theirDoubleBlindedA.map((val, i) => [val, events[i]])
         );
@@ -372,7 +370,7 @@ export function MatchingSession({ events, accessToken }: Props) {
         const setA = new Set(joinerDoubleBlindedARef.current);
         const matchedEvents: CalendarEvent[] = [];
 
-        // Map from ab*H(uid_B[j]) → Joiner event at j (ALP-181: use Map not index)
+        // Map from ab*H(uid_B[j]) → Joiner event at j
         const joinerMap = new Map<string, CalendarEvent>(
             theirDoubleBlindedB.map((val, i) => [val, events[i]])
         );
@@ -393,7 +391,7 @@ export function MatchingSession({ events, accessToken }: Props) {
         await sendMessage('NOTE', { uid, encrypted, seq } satisfies NotePayload);
 
         // Update local notes
-        setNotes((prev: Record<string, string>) => ({ ...prev, [uid]: noteText })); // Show what we sent
+        setNotes((prev: Record<string, string>) => ({ ...prev, [uid]: noteText }));
         setActiveNoteId(null);
         setNoteText('');
     };
