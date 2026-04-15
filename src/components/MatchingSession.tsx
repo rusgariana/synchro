@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { CalendarEvent } from '@/lib/calendar';
 import {
     generatePrivateKey,
     blindString,
-    hashToPoint,
     blindPoint,
     encryptNote,
     decryptNote,
@@ -37,9 +36,19 @@ export function MatchingSession({ events, accessToken }: Props) {
     const [logs, setLogs] = useState<string[]>([]);
     const [matches, setMatches] = useState<CalendarEvent[]>([]);
 
-    // Crypto State
-    const [privateKey] = useState(() => generatePrivateKey());
+    // Crypto State — separate keys for PSI blinding and ECDH to prevent key reuse
+    const [psiKey] = useState(() => generatePrivateKey());
+    const [ecdhKey] = useState(() => generatePrivateKey());
     const [sharedSecret, setSharedSecret] = useState<string | null>(null);
+
+    // Refs for stable handleMessages callback (avoids stale closure / interval churn)
+    const stateRef = useRef(state);
+    const roleRef = useRef(role);
+    const sharedSecretRef = useRef(sharedSecret);
+    const joinerDoubleBlindedARef = useRef<string[]>([]);
+    useEffect(() => { stateRef.current = state; }, [state]);
+    useEffect(() => { roleRef.current = role; }, [role]);
+    useEffect(() => { sharedSecretRef.current = sharedSecret; }, [sharedSecret]);
 
     // Notes State
     const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
@@ -115,10 +124,9 @@ export function MatchingSession({ events, accessToken }: Props) {
 
     const addLog = (msg: string) => setLogs((prev: string[]) => [...prev, msg]);
 
-    const [joinerDoubleBlindedA, setJoinerDoubleBlindedA] = useState<string[]>([]);
-
     const handleMessages = useCallback(async (messages: Message[]) => {
-        const myId = role;
+        const myId = roleRef.current;
+        const currentState = stateRef.current;
         if (!myId) return;
 
         const relevant = messages.filter(m => m.sender !== myId);
@@ -126,52 +134,52 @@ export function MatchingSession({ events, accessToken }: Props) {
 
         const lastMsg = relevant[relevant.length - 1];
 
-        if (state === 'CREATED' && lastMsg.type === 'JOIN') {
+        if (currentState === 'CREATED' && lastMsg.type === 'JOIN') {
             setState('EXCHANGING');
             addLog('Peer joined. Starting handshake...');
 
-            // Derive shared secret from peer's public key
             if (lastMsg.payload.publicKey) {
-                const secret = computeSharedSecret(lastMsg.payload.publicKey, privateKey);
+                const secret = computeSharedSecret(lastMsg.payload.publicKey, ecdhKey);
                 setSharedSecret(secret);
+                sharedSecretRef.current = secret;
                 addLog('Encryption channel established.');
             }
 
             await startPsiStep1();
         }
 
-        if (state === 'EXCHANGING') {
-            if (role === 'JOINER' && lastMsg.type === 'STEP_1') {
+        if (currentState === 'EXCHANGING') {
+            if (myId === 'JOINER' && lastMsg.type === 'STEP_1') {
                 addLog('Received Step 1 from Initiator.');
 
                 if (lastMsg.payload.publicKey) {
-                    const secret = computeSharedSecret(lastMsg.payload.publicKey, privateKey);
+                    const secret = computeSharedSecret(lastMsg.payload.publicKey, ecdhKey);
                     setSharedSecret(secret);
+                    sharedSecretRef.current = secret;
                     addLog('Encryption channel established.');
                 }
 
                 await runPsiStep2(lastMsg.payload.blinded);
             }
-            if (role === 'INITIATOR' && lastMsg.type === 'STEP_2') {
+            if (myId === 'INITIATOR' && lastMsg.type === 'STEP_2') {
                 addLog('Received Step 2 from Joiner.');
                 await runPsiStep3(lastMsg.payload);
             }
-            if (role === 'JOINER' && lastMsg.type === 'STEP_3') {
+            if (myId === 'JOINER' && lastMsg.type === 'STEP_3') {
                 addLog('Received Step 3 from Initiator.');
                 await finalizeJoiner(lastMsg.payload);
             }
         }
 
-        // Handle Notes (any state after results)
-        if (state === 'RESULTS') {
-            // Check for NOTE messages
+        // Handle Notes — active in RESULTS state
+        if (currentState === 'RESULTS') {
             for (const msg of relevant) {
                 if (msg.type === 'NOTE') {
                     const { uid, encrypted } = msg.payload;
-                    if (sharedSecret) {
+                    const secret = sharedSecretRef.current;
+                    if (secret) {
                         try {
-                            const decrypted = await decryptNote(encrypted, sharedSecret);
-                            // Always update with the latest note from the peer
+                            const decrypted = await decryptNote(encrypted, secret);
                             setNotes(prev => ({ ...prev, [uid]: decrypted }));
                         } catch (e) {
                             console.error('Failed to decrypt note', e);
@@ -180,7 +188,8 @@ export function MatchingSession({ events, accessToken }: Props) {
                 }
             }
         }
-    }, [role, state, events, privateKey, joinerDoubleBlindedA, sharedSecret, notes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Polling — continues through RESULTS so NOTE messages can be received
     useEffect(() => {
@@ -235,7 +244,7 @@ export function MatchingSession({ events, accessToken }: Props) {
                 setRole('JOINER');
                 setState('EXCHANGING');
                 addLog(`Joined session: ${inputSessionId}`);
-                const myPub = getPublicKey(privateKey);
+                const myPub = getPublicKey(ecdhKey);
                 await sendMessage('JOIN', { publicKey: myPub }, inputSessionId);
             } else {
                 alert('Session not found');
@@ -266,36 +275,23 @@ export function MatchingSession({ events, accessToken }: Props) {
 
     const startPsiStep1 = async () => {
         addLog('Computing blinded set...');
-        const blinded = events.map(e => ({
-            uid: e.uid,
-            val: blindString(e.uid, privateKey)
-        }));
+        const blinded = events.map(e => blindString(e.uid, psiKey));
 
-        const myPub = getPublicKey(privateKey);
+        const myPub = getPublicKey(ecdhKey);
 
-        // Send blinded values + Public Key
-        await sendMessage('STEP_1', {
-            blinded: blinded.map(b => b.val),
-            publicKey: myPub
-        });
+        await sendMessage('STEP_1', { blinded, publicKey: myPub });
         addLog('Sent blinded set to peer.');
     };
 
     const runPsiStep2 = async (theirBlinded: string[]) => {
         addLog('Processing peer\'s set...');
 
-        const doubleBlinded = theirBlinded.map(val => blindPoint(val, privateKey));
-        setJoinerDoubleBlindedA(doubleBlinded); // Store for later comparison
+        const doubleBlinded = theirBlinded.map(val => blindPoint(val, psiKey));
+        joinerDoubleBlindedARef.current = doubleBlinded;
 
-        const myBlinded = events.map(e => ({
-            event: e,
-            val: blindString(e.uid, privateKey)
-        }));
+        const myBlinded = events.map(e => blindString(e.uid, psiKey));
 
-        await sendMessage('STEP_2', {
-            doubleBlinded,
-            blinded: myBlinded.map(b => b.val)
-        });
+        await sendMessage('STEP_2', { doubleBlinded, blinded: myBlinded });
 
         addLog('Sent double-blinded values. Waiting for results...');
     };
@@ -305,16 +301,17 @@ export function MatchingSession({ events, accessToken }: Props) {
 
         addLog('Computing intersection...');
 
-        const myDoubleBlindedB = theirBlindedB.map(val => blindPoint(val, privateKey));
+        const myDoubleBlindedB = theirBlindedB.map(val => blindPoint(val, psiKey));
 
+        // Map from double-blinded Initiator value → Initiator event (ALP-181: use Map not index)
+        const initiatorMap = new Map<string, CalendarEvent>(
+            theirDoubleBlindedA.map((val, i) => [val, events[i]])
+        );
         const matchedEvents: CalendarEvent[] = [];
-        const setB = new Set(myDoubleBlindedB);
-
-        theirDoubleBlindedA.forEach((val, idx) => {
-            if (setB.has(val)) {
-                matchedEvents.push(events[idx]);
-            }
-        });
+        for (const val of myDoubleBlindedB) {
+            const event = initiatorMap.get(val);
+            if (event) matchedEvents.push(event);
+        }
 
         setMatches(matchedEvents);
         setState('RESULTS');
@@ -326,14 +323,18 @@ export function MatchingSession({ events, accessToken }: Props) {
     const finalizeJoiner = async (theirDoubleBlindedB: string[]) => {
         addLog('Computing final intersection...');
 
-        const setA = new Set(joinerDoubleBlindedA);
+        // setA = {ab * H(uid_A[i])} — Initiator's events double-blinded
+        const setA = new Set(joinerDoubleBlindedARef.current);
         const matchedEvents: CalendarEvent[] = [];
 
-        theirDoubleBlindedB.forEach((val, idx) => {
-            if (setA.has(val)) {
-                matchedEvents.push(events[idx]);
-            }
-        });
+        // Map from ab*H(uid_B[j]) → Joiner event at j (ALP-181: use Map not index)
+        const joinerMap = new Map<string, CalendarEvent>(
+            theirDoubleBlindedB.map((val, i) => [val, events[i]])
+        );
+        // Find Joiner events whose double-blinded value appears in Initiator's set
+        for (const [val, event] of joinerMap) {
+            if (setA.has(val) && event) matchedEvents.push(event);
+        }
 
         setMatches(matchedEvents);
         setState('RESULTS');
