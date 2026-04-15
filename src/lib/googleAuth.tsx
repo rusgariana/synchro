@@ -12,6 +12,7 @@ export interface GoogleUser {
 interface GoogleAuthContextType {
     user: GoogleUser | null;
     accessToken: string | null;
+    isTokenExpired: () => boolean;
     isLoading: boolean;
     signIn: () => void;
     signOut: () => void;
@@ -20,6 +21,7 @@ interface GoogleAuthContextType {
 const GoogleAuthContext = createContext<GoogleAuthContextType>({
     user: null,
     accessToken: null,
+    isTokenExpired: () => true,
     isLoading: false,
     signIn: () => {},
     signOut: () => {},
@@ -32,7 +34,10 @@ const GoogleAuthContext = createContext<GoogleAuthContextType>({
 export function GoogleAuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<GoogleUser | null>(null);
     const [accessToken, setAccessToken] = useState<string | null>(null);
+    const [tokenExpiresAt, setTokenExpiresAt] = useState<number | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+
+    const isTokenExpired = () => tokenExpiresAt !== null && Date.now() > tokenExpiresAt;
 
     const login = useGoogleLogin({
         // calendar.events scope allows read + write (PATCH extendedProperties)
@@ -54,6 +59,7 @@ export function GoogleAuthProvider({ children }: { children: ReactNode }) {
                 const info = await res.json();
                 setUser({ email: info.email, name: info.name, picture: info.picture });
                 setAccessToken(tokenResponse.access_token);
+                setTokenExpiresAt(Date.now() + 3600 * 1000);
             } catch (e) {
                 console.error('Failed to fetch Google user info', e);
             } finally {
@@ -72,13 +78,18 @@ export function GoogleAuthProvider({ children }: { children: ReactNode }) {
     };
 
     const signOut = () => {
+        if (accessToken) {
+            fetch(`https://oauth2.googleapis.com/revoke?token=${accessToken}`, { method: 'POST' })
+                .catch(() => { /* best-effort revocation */ });
+        }
         googleLogout();
         setUser(null);
         setAccessToken(null);
+        setTokenExpiresAt(null);
     };
 
     return (
-        <GoogleAuthContext.Provider value={{ user, accessToken, isLoading, signIn, signOut }}>
+        <GoogleAuthContext.Provider value={{ user, accessToken, isTokenExpired, isLoading, signIn, signOut }}>
             {children}
         </GoogleAuthContext.Provider>
     );
