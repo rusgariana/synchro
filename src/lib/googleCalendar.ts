@@ -1,5 +1,45 @@
 import { CalendarEvent } from './calendar';
 
+const NOTE_KEY_STORAGE = 'synchro_note_key';
+const ENC_PREFIX = 'enc:';
+
+async function getNoteKey(): Promise<CryptoKey> {
+    const stored = localStorage.getItem(NOTE_KEY_STORAGE);
+    if (stored) {
+        const raw = Uint8Array.from(atob(stored), c => c.charCodeAt(0));
+        return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+    }
+    const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+    const exported = await crypto.subtle.exportKey('raw', key);
+    localStorage.setItem(NOTE_KEY_STORAGE, btoa(String.fromCharCode(...new Uint8Array(exported))));
+    return key;
+}
+
+async function encryptNoteText(text: string): Promise<string> {
+    const key = await getNoteKey();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encoded = new TextEncoder().encode(text);
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
+    const combined = new Uint8Array(iv.byteLength + ciphertext.byteLength);
+    combined.set(iv, 0);
+    combined.set(new Uint8Array(ciphertext), iv.byteLength);
+    return ENC_PREFIX + btoa(String.fromCharCode(...combined));
+}
+
+async function decryptNoteText(stored: string): Promise<string> {
+    if (!stored.startsWith(ENC_PREFIX)) return stored + ' (legacy)';
+    try {
+        const key = await getNoteKey();
+        const combined = Uint8Array.from(atob(stored.slice(ENC_PREFIX.length)), c => c.charCodeAt(0));
+        const iv = combined.slice(0, 12);
+        const ciphertext = combined.slice(12);
+        const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+        return new TextDecoder().decode(decrypted);
+    } catch {
+        return stored + ' (decryption failed)';
+    }
+}
+
 /**
  * Fetch upcoming events from the user's primary Google Calendar.
  * Includes extendedProperties so we can read existing private notes.
@@ -28,21 +68,26 @@ export async function fetchGoogleCalendarEvents(accessToken: string): Promise<Ca
 
     const data = await res.json();
 
-    return (data.items ?? [])
-        .filter((item: any) => item.start) // skip all-day events without dateTime if needed
-        .map((item: any): CalendarEvent => ({
-            uid: item.iCalUID ?? item.id,
-            title: item.summary ?? '(No Title)',
-            start: item.start?.dateTime ?? item.start?.date ?? '',
-            end: item.end?.dateTime ?? item.end?.date ?? '',
-            description: item.description,
-            location: item.location,
-            url: item.htmlLink,
-            // Google-specific fields
-            googleEventId: item.id,
-            privateNote: item.extendedProperties?.private?.synchro_note ?? undefined,
-        }))
-        .filter((e: CalendarEvent) => e.start && e.end);
+    const items = (data.items ?? []).filter((item: any) => item.start);
+
+    const events = await Promise.all(
+        items.map(async (item: any): Promise<CalendarEvent> => {
+            const rawNote = item.extendedProperties?.private?.synchro_note;
+            return {
+                uid: item.iCalUID ?? item.id,
+                title: item.summary ?? '(No Title)',
+                start: item.start?.dateTime ?? item.start?.date ?? '',
+                end: item.end?.dateTime ?? item.end?.date ?? '',
+                description: item.description,
+                location: item.location,
+                url: item.htmlLink,
+                googleEventId: item.id,
+                privateNote: rawNote ? await decryptNoteText(rawNote) : undefined,
+            };
+        })
+    );
+
+    return events.filter(e => e.start && e.end);
 }
 
 /**
@@ -56,6 +101,8 @@ export async function savePrivateNote(
 ): Promise<void> {
     const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(googleEventId)}`;
 
+    const encryptedNote = await encryptNoteText(note);
+
     const res = await fetch(url, {
         method: 'PATCH',
         headers: {
@@ -65,7 +112,7 @@ export async function savePrivateNote(
         body: JSON.stringify({
             extendedProperties: {
                 private: {
-                    synchro_note: note,
+                    synchro_note: encryptedNote,
                 },
             },
         }),
