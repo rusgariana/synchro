@@ -135,8 +135,6 @@ export function computeSharedSecret(theirPublicKeyHex: string, myPrivateKey: Uin
     // Remove any whitespace or '0x' prefix
     const cleanKey = theirPublicKeyHex.trim().replace(/^0x/, '');
 
-    console.log('[computeSharedSecret] Input key:', cleanKey.substring(0, 20) + '...');
-
     const shared = secp256k1.getSharedSecret(myPrivateKey, cleanKey);
     // Hash it to get a clean 32-byte key
     return bytesToHex(sha256(shared));
