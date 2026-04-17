@@ -30,8 +30,7 @@ export function parseICS(icsContent: string): CalendarEvent[] {
                     end: event.endDate.toString(),
                     description: event.description,
                     location: event.location,
-                    // @ts-ignore - ical.js types might be incomplete
-                    url: vevent.getFirstPropertyValue('url'),
+                    url: (vevent as unknown as { getFirstPropertyValue(name: string): string | null }).getFirstPropertyValue('url') ?? undefined,
                 };
             })
             .filter((event) => {

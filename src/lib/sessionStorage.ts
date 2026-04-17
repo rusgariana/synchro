@@ -1,54 +1,62 @@
 import { CalendarEvent } from './calendar';
+import { makeLocalStorageAES } from './aesLocalStorage';
 
 export interface SavedSession {
-    id: string; // the sessionId or a new UID if it's not available
-    role: string;
+    id: string;
+    role: 'INITIATOR' | 'JOINER';
     date: string; // ISO string
     matches: CalendarEvent[];
-    notes: Record<string, string>; // the decrypted peer notes keyed by event UID
+    notes: Record<string, string>; // decrypted peer notes keyed by event UID
 }
 
 const STORAGE_KEY = 'synchro_saved_sessions';
 
-export function getSavedSessions(): SavedSession[] {
+const sessionAES = makeLocalStorageAES('synchro_sessions_key');
+
+export async function getSavedSessions(): Promise<SavedSession[]> {
     if (typeof window === 'undefined') return [];
     try {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (!stored) return [];
-        return JSON.parse(stored) as SavedSession[];
-    } catch (e) {
-        console.error('Failed to parse saved sessions', e);
+        // null = legacy plaintext (pre-encryption migration) — parse as-is
+        const decrypted = await sessionAES.decrypt(stored) ?? stored;
+        return JSON.parse(decrypted) as SavedSession[];
+    } catch {
         return [];
     }
 }
 
-export function saveSession(session: SavedSession): void {
-    if (typeof window === 'undefined') return;
+export async function saveSession(session: SavedSession): Promise<SavedSession[]> {
+    if (typeof window === 'undefined') return [];
+    let current: SavedSession[] = [];
     try {
-        const current = getSavedSessions();
+        current = await getSavedSessions();
         const existingIndex = current.findIndex(s => s.id === session.id);
-        
         if (existingIndex >= 0) {
-            // Update existing
             current[existingIndex] = session;
         } else {
-            // Add new
             current.unshift(session);
         }
-        
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+        const encrypted = await sessionAES.encrypt(JSON.stringify(current));
+        localStorage.setItem(STORAGE_KEY, encrypted);
+        return current;
     } catch (e) {
         console.error('Failed to save session', e);
+        return current;
     }
 }
 
-export function deleteSession(id: string): void {
-    if (typeof window === 'undefined') return;
+export async function deleteSession(id: string): Promise<SavedSession[]> {
+    if (typeof window === 'undefined') return [];
+    let current: SavedSession[] = [];
     try {
-        const current = getSavedSessions();
+        current = await getSavedSessions();
         const filtered = current.filter(s => s.id !== id);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+        const encrypted = await sessionAES.encrypt(JSON.stringify(filtered));
+        localStorage.setItem(STORAGE_KEY, encrypted);
+        return filtered;
     } catch (e) {
         console.error('Failed to delete session', e);
+        return current;
     }
 }

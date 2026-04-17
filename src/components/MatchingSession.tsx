@@ -1,16 +1,16 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { CalendarEvent } from '@/lib/calendar';
 import {
     generatePrivateKey,
     blindString,
-    hashToPoint,
     blindPoint,
     encryptNote,
     decryptNote,
     computeSharedSecret,
-    getPublicKey
+    getPublicKey,
+    sessionFingerprint
 } from '@/lib/crypto';
 import { savePrivateNote } from '@/lib/googleCalendar';
 import { Loader2, Copy, Check, MessageSquare, Lock, Trash2, ArrowLeft } from 'lucide-react';
@@ -23,10 +23,59 @@ interface Props {
 
 type State = 'IDLE' | 'CREATED' | 'JOINING' | 'EXCHANGING' | 'COMPUTING' | 'RESULTS';
 
-interface Message {
-    type: 'JOIN' | 'STEP_1' | 'STEP_2' | 'STEP_3' | 'NOTE';
-    sender: string;
-    payload: any;
+// Typed message payloads — validated before use (ALP-191)
+interface JoinPayload { publicKey: string }
+interface Step1Payload { blinded: string[]; publicKey: string }
+interface Step2Payload { doubleBlinded: string[]; blinded: string[] }
+interface NotePayload { uid: string; encrypted: string; seq: number }
+
+type TypedMessage =
+    | { type: 'JOIN';   sender: string; payload: JoinPayload }
+    | { type: 'STEP_1'; sender: string; payload: Step1Payload }
+    | { type: 'STEP_2'; sender: string; payload: Step2Payload }
+    | { type: 'STEP_3'; sender: string; payload: string[] }
+    | { type: 'NOTE';   sender: string; payload: NotePayload };
+
+function isString(v: unknown): v is string { return typeof v === 'string'; }
+function isStringArray(v: unknown): v is string[] {
+    return Array.isArray(v) && v.every(isString);
+}
+function parseMessage(raw: unknown): TypedMessage | null {
+    if (typeof raw !== 'object' || raw === null) return null;
+    const m = raw as Record<string, unknown>;
+    if (!isString(m.type) || !isString(m.sender)) return null;
+    const p = m.payload;
+    switch (m.type) {
+        case 'JOIN':
+            if (typeof p === 'object' && p !== null && isString((p as JoinPayload).publicKey))
+                return { type: 'JOIN', sender: m.sender, payload: p as JoinPayload };
+            break;
+        case 'STEP_1':
+            if (typeof p === 'object' && p !== null
+                && isStringArray((p as Step1Payload).blinded)
+                && isString((p as Step1Payload).publicKey))
+                return { type: 'STEP_1', sender: m.sender, payload: p as Step1Payload };
+            break;
+        case 'STEP_2':
+            if (typeof p === 'object' && p !== null
+                && isStringArray((p as Step2Payload).doubleBlinded)
+                && isStringArray((p as Step2Payload).blinded))
+                return { type: 'STEP_2', sender: m.sender, payload: p as Step2Payload };
+            break;
+        case 'STEP_3':
+            if (isStringArray(p))
+                return { type: 'STEP_3', sender: m.sender, payload: p };
+            break;
+        case 'NOTE':
+            if (typeof p === 'object' && p !== null
+                && isString((p as NotePayload).uid)
+                && isString((p as NotePayload).encrypted)
+                && Number.isFinite((p as NotePayload).seq)
+                && (p as NotePayload).seq >= 0)
+                return { type: 'NOTE', sender: m.sender, payload: p as NotePayload };
+            break;
+    }
+    return null;
 }
 
 export function MatchingSession({ events, accessToken }: Props) {
@@ -37,9 +86,21 @@ export function MatchingSession({ events, accessToken }: Props) {
     const [logs, setLogs] = useState<string[]>([]);
     const [matches, setMatches] = useState<CalendarEvent[]>([]);
 
-    // Crypto State
-    const [privateKey] = useState(() => generatePrivateKey());
+    // Crypto State — separate keys for PSI blinding and ECDH to prevent key reuse
+    const [psiKey] = useState(() => generatePrivateKey());
+    const [ecdhKey] = useState(() => generatePrivateKey());
     const [sharedSecret, setSharedSecret] = useState<string | null>(null);
+
+    // Refs for stable handleMessages callback (avoids stale closure / interval churn)
+    const stateRef = useRef(state);
+    const roleRef = useRef(role);
+    const sharedSecretRef = useRef(sharedSecret);
+    const joinerDoubleBlindedARef = useRef<string[]>([]);
+    const noteSendSeqRef = useRef(0);   // monotonically increasing send counter
+    const noteLastSeqRef = useRef(-1);  // last accepted receive seq from peer
+    useEffect(() => { stateRef.current = state; }, [state]);
+    useEffect(() => { roleRef.current = role; }, [role]);
+    useEffect(() => { sharedSecretRef.current = sharedSecret; }, [sharedSecret]);
 
     // Notes State
     const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
@@ -79,118 +140,90 @@ export function MatchingSession({ events, accessToken }: Props) {
     const [savedSessions, setSavedSessions] = useState<SavedSession[]>([]);
 
     useEffect(() => {
-        setSavedSessions(getSavedSessions());
+        getSavedSessions().then(setSavedSessions);
     }, []);
 
     // Effect to auto-save current active session
     useEffect(() => {
         if (state === 'RESULTS' && sessionId && role) {
-            saveSession({
-                id: sessionId,
-                role,
-                date: new Date().toISOString(),
-                matches,
-                notes
-            });
-            // Refresh list in background
-            setSavedSessions(getSavedSessions());
+            saveSession({ id: sessionId, role, date: new Date().toISOString(), matches, notes })
+                .then(setSavedSessions);
         }
     }, [state, sessionId, role, matches, notes]);
 
     const loadSavedSession = (s: SavedSession) => {
         setSessionId(s.id);
-        setRole(s.role as any);
+        setRole(s.role);
         setMatches(s.matches);
         setNotes(s.notes);
         setState('RESULTS');
     };
 
-    const handleDeleteSession = (id: string, e: React.MouseEvent) => {
+    const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
         if (confirm('Delete this saved session?')) {
-            deleteSession(id);
-            setSavedSessions(getSavedSessions());
+            deleteSession(id).then(setSavedSessions);
         }
     };
 
     const addLog = (msg: string) => setLogs((prev: string[]) => [...prev, msg]);
 
-    const [joinerDoubleBlindedA, setJoinerDoubleBlindedA] = useState<string[]>([]);
+    const handleMessages = useCallback(async (rawMessages: unknown[]) => {
+        const myId = roleRef.current;
+        const currentState = stateRef.current;
+        if (!myId) return;
 
-    const handleMessages = useCallback(async (messages: Message[]) => {
-        console.log('[handleMessages] Called with', messages.length, 'messages');
-        console.log('[handleMessages] Current state:', state, 'role:', role);
-
-        const myId = role;
-        if (!myId) {
-            console.log('[handleMessages] No role set, returning');
-            return;
-        }
+        // Validate and type-narrow all messages at the boundary
+        const messages = rawMessages.flatMap(m => {
+            const parsed = parseMessage(m);
+            return parsed ? [parsed] : [];
+        });
 
         const relevant = messages.filter(m => m.sender !== myId);
-        console.log('[handleMessages] Relevant messages:', relevant.length);
         if (relevant.length === 0) return;
 
-        // Process all new messages? Or just the last one?
-        // For notes, we might receive multiple.
-        // For handshake, state machine handles it.
-        // Let's iterate.
-
-        // We need to track processed messages to avoid re-processing.
-        // Simplified: Just look at the last one for state transitions.
-        // For notes, we need to scan all.
-
         const lastMsg = relevant[relevant.length - 1];
-        console.log('[handleMessages] Processing message type:', lastMsg.type);
 
-        if (state === 'CREATED' && lastMsg.type === 'JOIN') {
-            console.log('[handleMessages] INITIATOR: Peer joined, starting PSI');
+        if (currentState === 'CREATED' && lastMsg.type === 'JOIN') {
             setState('EXCHANGING');
             addLog('Peer joined. Starting handshake...');
-
-            // Derive shared secret from peer's public key
-            if (lastMsg.payload.publicKey) {
-                const secret = computeSharedSecret(lastMsg.payload.publicKey, privateKey);
-                setSharedSecret(secret);
-                addLog('Encryption channel established.');
-            }
-
-            console.log('[handleMessages] About to call startPsiStep1, function exists:', typeof startPsiStep1);
+            const secret = computeSharedSecret(lastMsg.payload.publicKey, ecdhKey);
+            setSharedSecret(secret);
+            sharedSecretRef.current = secret;
+            addLog('Encryption channel established.');
             await startPsiStep1();
         }
 
-        if (state === 'EXCHANGING') {
-            if (role === 'JOINER' && lastMsg.type === 'STEP_1') {
+        if (currentState === 'EXCHANGING') {
+            if (myId === 'JOINER' && lastMsg.type === 'STEP_1') {
                 addLog('Received Step 1 from Initiator.');
-
-                if (lastMsg.payload.publicKey) {
-                    const secret = computeSharedSecret(lastMsg.payload.publicKey, privateKey);
-                    setSharedSecret(secret);
-                    addLog('Encryption channel established.');
-                }
-
+                const secret = computeSharedSecret(lastMsg.payload.publicKey, ecdhKey);
+                setSharedSecret(secret);
+                sharedSecretRef.current = secret;
+                addLog('Encryption channel established.');
                 await runPsiStep2(lastMsg.payload.blinded);
             }
-            if (role === 'INITIATOR' && lastMsg.type === 'STEP_2') {
+            if (myId === 'INITIATOR' && lastMsg.type === 'STEP_2') {
                 addLog('Received Step 2 from Joiner.');
                 await runPsiStep3(lastMsg.payload);
             }
-            if (role === 'JOINER' && lastMsg.type === 'STEP_3') {
+            if (myId === 'JOINER' && lastMsg.type === 'STEP_3') {
                 addLog('Received Step 3 from Initiator.');
                 await finalizeJoiner(lastMsg.payload);
             }
         }
 
-        // Handle Notes (any state after results)
-        if (state === 'RESULTS') {
-            // Check for NOTE messages
+        // Handle Notes — active in RESULTS state; seq enforced for replay protection
+        if (currentState === 'RESULTS') {
             for (const msg of relevant) {
                 if (msg.type === 'NOTE') {
-                    const { uid, encrypted } = msg.payload;
-                    if (sharedSecret) {
+                    const { uid, encrypted, seq } = msg.payload;
+                    if (seq <= noteLastSeqRef.current) continue; // replay — discard
+                    noteLastSeqRef.current = seq; // claim seq before await to close race window
+                    const secret = sharedSecretRef.current;
+                    if (secret) {
                         try {
-                            const decrypted = await decryptNote(encrypted, sharedSecret);
-                            // Always update with the latest note from the peer
+                            const decrypted = await decryptNote(encrypted, secret);
                             setNotes(prev => ({ ...prev, [uid]: decrypted }));
                         } catch (e) {
                             console.error('Failed to decrypt note', e);
@@ -199,9 +232,10 @@ export function MatchingSession({ events, accessToken }: Props) {
                 }
             }
         }
-    }, [role, state, events, privateKey, joinerDoubleBlindedA, sharedSecret, notes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
-    // Polling - moved here after handleMessages is defined
+    // Polling — continues through RESULTS so NOTE messages can be received
     useEffect(() => {
         if (!sessionId) return;
 
@@ -221,47 +255,53 @@ export function MatchingSession({ events, accessToken }: Props) {
         }, 2000);
 
         return () => clearInterval(interval);
-    }, [sessionId, handleMessages]);
+    }, [sessionId, state, handleMessages]);
 
     const createSession = async () => {
-        const res = await fetch('/api/signal', {
-            method: 'POST',
-            body: JSON.stringify({ action: 'create' }),
-        });
-        const data = await res.json();
-        setSessionId(data.sessionId);
-        setRole('INITIATOR');
-        setState('CREATED');
-        addLog(`Session created: ${data.sessionId}`);
+        try {
+            const res = await fetch('/api/signal', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'create' }),
+            });
+            if (!res.ok) throw new Error(`Server error: ${res.status}`);
+            const data = await res.json();
+            setSessionId(data.sessionId);
+            setRole('INITIATOR');
+            setState('CREATED');
+            addLog(`Session created: ${data.sessionId}`);
+        } catch (e) {
+            alert(`Failed to create session: ${e instanceof Error ? e.message : 'Unknown error'}`);
+        }
     };
 
     const joinSession = async () => {
         if (!inputSessionId) return;
-        const res = await fetch('/api/signal', {
-            method: 'POST',
-            body: JSON.stringify({
-                action: 'join',
-                sessionId: inputSessionId,
-            }),
-        });
-        if (res.ok) {
-            setSessionId(inputSessionId);
-            setRole('JOINER');
-            setState('EXCHANGING'); // Wait for Step 1
-            addLog(`Joined session: ${inputSessionId}`);
-            // Notify initiator with my Public Key
-            const myPub = getPublicKey(privateKey);
-            await sendMessage('JOIN', { publicKey: myPub }, inputSessionId);
-        } else {
-            alert('Session not found');
+        try {
+            const res = await fetch('/api/signal', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'join', sessionId: inputSessionId }),
+            });
+            if (res.ok) {
+                setSessionId(inputSessionId);
+                setRole('JOINER');
+                setState('EXCHANGING');
+                addLog(`Joined session: ${inputSessionId}`);
+                const myPub = getPublicKey(ecdhKey);
+                await sendMessage('JOIN', { publicKey: myPub }, inputSessionId);
+            } else {
+                alert('Session not found');
+            }
+        } catch (e) {
+            alert(`Failed to join session: ${e instanceof Error ? e.message : 'Unknown error'}`);
         }
     };
 
-    const sendMessage = async (type: string, payload: any, sid?: string) => {
+    const sendMessage = async (type: string, payload: unknown, sid?: string) => {
         const targetSessionId = sid || sessionId;
-        console.log('[sendMessage] Sending', type, 'to session', targetSessionId);
         try {
-            const res = await fetch('/api/signal', {
+            await fetch('/api/signal', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -270,16 +310,8 @@ export function MatchingSession({ events, accessToken }: Props) {
                     payload: { type, sender: role, payload }
                 }),
             });
-
-            if (!res.ok) {
-                console.error('[sendMessage] Failed:', res.status, res.statusText);
-                const errorData = await res.json().catch(() => ({}));
-                console.error('[sendMessage] Error data:', errorData);
-            } else {
-                console.log('[sendMessage] Success:', type);
-            }
         } catch (error) {
-            console.error('[sendMessage] Exception:', error);
+            console.error('Failed to send message:', error);
         }
     };
 
@@ -287,36 +319,23 @@ export function MatchingSession({ events, accessToken }: Props) {
 
     const startPsiStep1 = async () => {
         addLog('Computing blinded set...');
-        const blinded = events.map(e => ({
-            uid: e.uid,
-            val: blindString(e.uid, privateKey)
-        }));
+        const blinded = events.map(e => blindString(e.uid, psiKey));
 
-        const myPub = getPublicKey(privateKey);
+        const myPub = getPublicKey(ecdhKey);
 
-        // Send blinded values + Public Key
-        await sendMessage('STEP_1', {
-            blinded: blinded.map(b => b.val),
-            publicKey: myPub
-        });
+        await sendMessage('STEP_1', { blinded, publicKey: myPub });
         addLog('Sent blinded set to peer.');
     };
 
     const runPsiStep2 = async (theirBlinded: string[]) => {
         addLog('Processing peer\'s set...');
 
-        const doubleBlinded = theirBlinded.map(val => blindPoint(val, privateKey));
-        setJoinerDoubleBlindedA(doubleBlinded); // Store for later comparison
+        const doubleBlinded = theirBlinded.map(val => blindPoint(val, psiKey));
+        joinerDoubleBlindedARef.current = doubleBlinded;
 
-        const myBlinded = events.map(e => ({
-            event: e,
-            val: blindString(e.uid, privateKey)
-        }));
+        const myBlinded = events.map(e => blindString(e.uid, psiKey));
 
-        await sendMessage('STEP_2', {
-            doubleBlinded,
-            blinded: myBlinded.map(b => b.val)
-        });
+        await sendMessage('STEP_2', { doubleBlinded, blinded: myBlinded });
 
         addLog('Sent double-blinded values. Waiting for results...');
     };
@@ -326,35 +345,40 @@ export function MatchingSession({ events, accessToken }: Props) {
 
         addLog('Computing intersection...');
 
-        const myDoubleBlindedB = theirBlindedB.map(val => blindPoint(val, privateKey));
+        const myDoubleBlindedB = theirBlindedB.map(val => blindPoint(val, psiKey));
 
+        // Map from double-blinded Initiator value → Initiator event
+        const initiatorMap = new Map<string, CalendarEvent>(
+            theirDoubleBlindedA.map((val, i) => [val, events[i]])
+        );
         const matchedEvents: CalendarEvent[] = [];
-        const setB = new Set(myDoubleBlindedB);
-
-        theirDoubleBlindedA.forEach((val, idx) => {
-            if (setB.has(val)) {
-                matchedEvents.push(events[idx]);
-            }
-        });
+        for (const val of myDoubleBlindedB) {
+            const event = initiatorMap.get(val);
+            if (event) matchedEvents.push(event);
+        }
 
         setMatches(matchedEvents);
-        setState('RESULTS');
         addLog(`Found ${matchedEvents.length} matches!`);
 
         await sendMessage('STEP_3', myDoubleBlindedB);
+        setState('RESULTS'); // after send — Joiner won't get stuck if network fails
     };
 
     const finalizeJoiner = async (theirDoubleBlindedB: string[]) => {
         addLog('Computing final intersection...');
 
-        const setA = new Set(joinerDoubleBlindedA);
+        // setA = {ab * H(uid_A[i])} — Initiator's events double-blinded
+        const setA = new Set(joinerDoubleBlindedARef.current);
         const matchedEvents: CalendarEvent[] = [];
 
-        theirDoubleBlindedB.forEach((val, idx) => {
-            if (setA.has(val)) {
-                matchedEvents.push(events[idx]);
-            }
-        });
+        // Map from ab*H(uid_B[j]) → Joiner event at j
+        const joinerMap = new Map<string, CalendarEvent>(
+            theirDoubleBlindedB.map((val, i) => [val, events[i]])
+        );
+        // Find Joiner events whose double-blinded value appears in Initiator's set
+        for (const [val, event] of joinerMap) {
+            if (setA.has(val) && event) matchedEvents.push(event);
+        }
 
         setMatches(matchedEvents);
         setState('RESULTS');
@@ -363,11 +387,12 @@ export function MatchingSession({ events, accessToken }: Props) {
 
     const sendNote = async (uid: string) => {
         if (!sharedSecret || !noteText) return;
+        const seq = noteSendSeqRef.current++;
         const encrypted = await encryptNote(noteText, sharedSecret);
-        await sendMessage('NOTE', { uid, encrypted });
+        await sendMessage('NOTE', { uid, encrypted, seq } satisfies NotePayload);
 
         // Update local notes
-        setNotes((prev: Record<string, string>) => ({ ...prev, [uid]: noteText })); // Show what we sent
+        setNotes((prev: Record<string, string>) => ({ ...prev, [uid]: noteText }));
         setActiveNoteId(null);
         setNoteText('');
     };
@@ -510,6 +535,16 @@ export function MatchingSession({ events, accessToken }: Props) {
                     <h3 className="text-2xl font-bold text-center">
                         Found {matches.length} Mutual Events
                     </h3>
+
+                    {sharedSecret && (
+                        <div className="flex items-center justify-center gap-2 text-xs text-zinc-500">
+                            <Lock className="w-3 h-3" />
+                            <span>Session fingerprint:</span>
+                            <span className="font-mono tracking-widest text-zinc-400 animate-[fadeIn_0.6s_ease-in]">
+                                {sessionFingerprint(sharedSecret)}
+                            </span>
+                        </div>
+                    )}
                     <div className="grid gap-4">
                         {matches.map(event => (
                             <div key={event.uid} className="p-4 rounded-xl bg-zinc-800/50 border border-zinc-700 flex flex-col gap-4">

@@ -1,4 +1,19 @@
 import { CalendarEvent } from './calendar';
+import { makeLocalStorageAES } from './aesLocalStorage';
+
+const noteAES = makeLocalStorageAES('synchro_note_key');
+
+interface GCalItem {
+    id: string;
+    iCalUID?: string;
+    summary?: string;
+    start?: { dateTime?: string; date?: string };
+    end?: { dateTime?: string; date?: string };
+    description?: string;
+    location?: string;
+    htmlLink?: string;
+    extendedProperties?: { private?: { synchro_note?: string } };
+}
 
 /**
  * Fetch upcoming events from the user's primary Google Calendar.
@@ -28,21 +43,29 @@ export async function fetchGoogleCalendarEvents(accessToken: string): Promise<Ca
 
     const data = await res.json();
 
-    return (data.items ?? [])
-        .filter((item: any) => item.start) // skip all-day events without dateTime if needed
-        .map((item: any): CalendarEvent => ({
-            uid: item.iCalUID ?? item.id,
-            title: item.summary ?? '(No Title)',
-            start: item.start?.dateTime ?? item.start?.date ?? '',
-            end: item.end?.dateTime ?? item.end?.date ?? '',
-            description: item.description,
-            location: item.location,
-            url: item.htmlLink,
-            // Google-specific fields
-            googleEventId: item.id,
-            privateNote: item.extendedProperties?.private?.synchro_note ?? undefined,
-        }))
-        .filter((e: CalendarEvent) => e.start && e.end);
+    const items = ((data.items ?? []) as GCalItem[]).filter(item => item.start);
+
+    return Promise.all(
+        items.map(async (item): Promise<CalendarEvent> => {
+            const rawNote = item.extendedProperties?.private?.synchro_note;
+            let privateNote: string | undefined;
+            if (rawNote) {
+                // null = legacy plaintext note stored before encryption was added — use as-is
+                privateNote = await noteAES.decrypt(rawNote) ?? rawNote;
+            }
+            return {
+                uid: item.iCalUID ?? item.id,
+                title: item.summary ?? '(No Title)',
+                start: item.start?.dateTime ?? item.start?.date ?? '',
+                end: item.end?.dateTime ?? item.end?.date ?? '',
+                description: item.description,
+                location: item.location,
+                url: item.htmlLink,
+                googleEventId: item.id,
+                privateNote,
+            };
+        })
+    );
 }
 
 /**
@@ -56,6 +79,8 @@ export async function savePrivateNote(
 ): Promise<void> {
     const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(googleEventId)}`;
 
+    const encryptedNote = await noteAES.encrypt(note);
+
     const res = await fetch(url, {
         method: 'PATCH',
         headers: {
@@ -65,7 +90,7 @@ export async function savePrivateNote(
         body: JSON.stringify({
             extendedProperties: {
                 private: {
-                    synchro_note: note,
+                    synchro_note: encryptedNote,
                 },
             },
         }),
