@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowRight, CheckCircle2 } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 export default function Home() {
     const [email, setEmail] = useState('');
@@ -45,42 +45,47 @@ export default function Home() {
     };
 
     return (
-        <main className="flex min-h-screen flex-col items-center justify-between p-8 relative overflow-hidden bg-black text-white selection:bg-purple-500/30">
+        <main className="flex min-h-screen flex-col items-center px-8 pt-0 pb-0 relative overflow-hidden bg-[#09090b] text-white">
             {/* Background Effects */}
-            <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-purple-600/20 rounded-full blur-[120px] -z-10 animate-pulse" />
-            <div className="absolute bottom-1/4 right-1/4 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[120px] -z-10" />
+            <div className="absolute inset-0 bg-[#09090b] -z-20" />
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[600px] bg-purple-600/15 rounded-full blur-[120px] -z-10 opacity-50" />
+            <div className="absolute bottom-0 right-0 w-[800px] h-[600px] bg-blue-600/8 rounded-full blur-[120px] -z-10 opacity-30" />
 
-            <div className="flex-1 flex flex-col items-center justify-center w-full mt-4">
-                {/* Content Container */}
-                <div className="w-full max-w-3xl flex flex-col items-center gap-4 z-0 text-center animate-in fade-in slide-in-from-bottom-8 duration-1000">
-                    
+            {/* Main Content — vertically centered, single viewport */}
+            <div className="flex-1 flex flex-col items-center justify-center w-full max-w-5xl z-0">
+                <div className="text-center space-y-4">
                     {/* Logo */}
-                    <div className="flex flex-col items-center mb-6 mt-2">
+                    <div className="relative inline-block mb-0">
+                        <div className="absolute inset-0 bg-purple-600/20 blur-[80px] rounded-full scale-[1.5] z-0 translate-y-6" />
                         <img
                             src="/logo_transparent.png"
                             alt="Synchro Logo"
-                            className="w-48 h-48 md:w-56 md:h-56 mx-auto drop-shadow-[0_0_20px_rgba(168,85,247,0.3)]"
+                            className="relative w-36 h-36 md:w-44 md:h-44 mx-auto z-10 opacity-90 translate-y-6"
                         />
                     </div>
-
-                    {/* Hero Headings */}
-                    <h1 className="text-5xl md:text-7xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-purple-100 to-purple-400 max-w-3xl leading-tight">
-                        Sync Calendars<br />Keep Privacy
-                    </h1>
                     
-                    <p className="text-xl md:text-2xl text-zinc-400 max-w-2xl font-light mt-2">
+                    {/* Hero */}
+                    <div>
+                        <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tighter leading-[1.1]">
+                            <span className="text-white">Sync Calendars</span><br />
+                            <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-300 via-purple-500 to-blue-400 drop-shadow-[0_0_30px_rgba(139,92,246,0.2)]">Keep Privacy</span>
+                        </h1>
+                    </div>
+
+                    {/* Subtitle */}
+                    <p className="text-sm sm:text-base text-zinc-400 max-w-2xl mx-auto font-light tracking-widest italic opacity-70">
                         Discover overlapping events with peers without exposing your personal data
                     </p>
-
+                    
                     {/* Feature Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-10 w-full max-w-3xl">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-4xl mx-auto text-center pt-4">
                         {/* Sync Card */}
                         <div className="relative group transition-all duration-500 hover:-translate-y-2 max-w-[280px] mx-auto">
                             <div className="absolute -inset-1 bg-gradient-to-r from-purple-500/40 via-purple-400/40 to-blue-400/40 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition duration-700 -z-10" />
-                            <div className="p-6 h-full rounded-2xl bg-zinc-900/40 border border-zinc-800/50 backdrop-blur-md transition-colors duration-500 hover:bg-zinc-900/70 hover:border-zinc-700/50 relative overflow-hidden">
+                            <div className="p-5 h-full rounded-2xl bg-zinc-900/40 border border-zinc-800/50 backdrop-blur-md transition-colors duration-500 hover:bg-zinc-900/70 hover:border-zinc-700/50 relative overflow-hidden">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-500/10 via-purple-400/10 to-blue-400/10 rounded-full blur-3xl -mr-12 -mt-12 opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-                                <strong className="text-white text-2xl block mb-2 font-bold tracking-tight bg-clip-text group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-purple-300 group-hover:to-purple-400 transition-all duration-500">Sync</strong>
-                                <p className="text-zinc-400 leading-relaxed font-light text-sm">
+                                <strong className="text-white text-xl block mb-1.5 font-bold tracking-tight bg-clip-text group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-purple-300 group-hover:to-purple-400 transition-all duration-500">Sync</strong>
+                                <p className="text-zinc-400 leading-relaxed font-light text-xs">
                                     Link your Luma securely with zero-database sync to automatically fetch your confirmed events.
                                 </p>
                             </div>
@@ -89,10 +94,10 @@ export default function Home() {
                         {/* Match Card */}
                         <div className="relative group transition-all duration-500 hover:-translate-y-2 delay-100 max-w-[280px] mx-auto">
                             <div className="absolute -inset-1 bg-gradient-to-r from-purple-500/40 via-purple-400/40 to-blue-400/40 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition duration-700 -z-10" />
-                            <div className="p-6 h-full rounded-2xl bg-zinc-900/40 border border-zinc-800/50 backdrop-blur-md transition-colors duration-500 hover:bg-zinc-900/70 hover:border-zinc-700/50 relative overflow-hidden">
+                            <div className="p-5 h-full rounded-2xl bg-zinc-900/40 border border-zinc-800/50 backdrop-blur-md transition-colors duration-500 hover:bg-zinc-900/70 hover:border-zinc-700/50 relative overflow-hidden">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-500/10 via-purple-400/10 to-blue-400/10 rounded-full blur-3xl -mr-12 -mt-12 opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-                                <strong className="text-white text-2xl block mb-2 font-bold tracking-tight bg-clip-text group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-purple-400 group-hover:to-blue-400 transition-all duration-500">Match</strong>
-                                <p className="text-zinc-400 leading-relaxed font-light text-sm">
+                                <strong className="text-white text-xl block mb-1.5 font-bold tracking-tight bg-clip-text group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-purple-400 group-hover:to-blue-400 transition-all duration-500">Match</strong>
+                                <p className="text-zinc-400 leading-relaxed font-light text-xs">
                                     Identify shared events with true blind matching that reveals nothing but your mutual plans.
                                 </p>
                             </div>
@@ -101,63 +106,62 @@ export default function Home() {
                         {/* Meet Card */}
                         <div className="relative group transition-all duration-500 hover:-translate-y-2 delay-200 max-w-[280px] mx-auto">
                             <div className="absolute -inset-1 bg-gradient-to-r from-purple-500/40 via-purple-400/40 to-blue-400/40 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition duration-700 -z-10" />
-                            <div className="p-6 h-full rounded-2xl bg-zinc-900/40 border border-zinc-800/50 backdrop-blur-md transition-colors duration-500 hover:bg-zinc-900/70 hover:border-zinc-700/50 relative overflow-hidden">
+                            <div className="p-5 h-full rounded-2xl bg-zinc-900/40 border border-zinc-800/50 backdrop-blur-md transition-colors duration-500 hover:bg-zinc-900/70 hover:border-zinc-700/50 relative overflow-hidden">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-500/10 via-purple-400/10 to-blue-400/10 rounded-full blur-3xl -mr-12 -mt-12 opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-                                <strong className="text-white text-2xl block mb-2 font-bold tracking-tight bg-clip-text group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-purple-300 group-hover:via-purple-400 group-hover:to-blue-400 transition-all duration-500">Meet</strong>
-                                <p className="text-zinc-400 leading-relaxed font-light text-sm">
+                                <strong className="text-white text-xl block mb-1.5 font-bold tracking-tight bg-clip-text group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-purple-300 group-hover:via-purple-400 group-hover:to-blue-400 transition-all duration-500">Meet</strong>
+                                <p className="text-zinc-400 leading-relaxed font-light text-xs">
                                     Schedule meetings in one click, create private notes, and export to your calendar.
                                 </p>
                             </div>
                         </div>
                     </div>
 
-                    {/* Email Signup Form */}
-                    <div className="mt-8 w-full max-w-md bg-zinc-900/40 p-2 rounded-2xl border border-zinc-800/50 backdrop-blur-xl shadow-2xl">
-                        <div className="px-4 pt-4 pb-3 flex flex-col items-center min-h-[140px] justify-center text-center">
+                    {/* Early Access Form — compact */}
+                    <div className="w-full max-w-sm mx-auto pt-4">
+                        <div className="bg-zinc-900/40 px-4 py-3 rounded-xl border border-zinc-800/50 backdrop-blur-xl">
                             {status === 'success' ? (
-                                <div className="flex flex-col items-center gap-3 text-green-400 animate-in zoom-in-95 duration-500 py-4">
-                                    <CheckCircle2 className="w-12 h-12" />
-                                    <div className="space-y-1">
-                                        <h3 className="text-lg font-bold text-white">You're on the list!</h3>
-                                        <p className="text-zinc-400 text-sm">We'll notify you as soon as we're ready.</p>
+                                <div className="flex flex-col items-center gap-2 text-green-400 py-2">
+                                    <CheckCircle2 className="w-8 h-8" />
+                                    <div className="space-y-0.5 text-center">
+                                        <h3 className="text-sm font-bold text-white">You're on the list!</h3>
+                                        <p className="text-zinc-400 text-xs">We'll notify you as soon as we're ready.</p>
                                     </div>
                                     <button 
                                         onClick={() => setStatus('idle')}
-                                        className="text-xs text-zinc-500 hover:text-zinc-300 underline mt-2"
+                                        className="text-xs text-zinc-500 hover:text-zinc-300 underline mt-1"
                                     >
                                         Register another email
                                     </button>
                                 </div>
                             ) : (
                                 <>
-                                    <h3 className="text-xl md:text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-400 mb-4">Get early access</h3>
-                                    <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 w-full">
-                                    <input
-                                        type="email"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        placeholder="name@example.com"
-                                        required
-                                        className="w-full bg-white border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all text-black placeholder-zinc-500 font-medium"
-                                    />
-                                    <button
-                                        type="submit"
-                                        disabled={status === 'loading'}
-                                        className="bg-purple-600 text-white hover:bg-purple-500 rounded-xl px-6 py-3 text-sm font-semibold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 whitespace-nowrap uppercase tracking-wider"
-                                    >
-                                        {status === 'loading' ? '...' : 'SEND'}
-                                    </button>
-                                </form>
+                                    <h3 className="text-sm font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-400 mb-2 text-center">Get early access</h3>
+                                    <form onSubmit={handleSubmit} className="flex gap-2">
+                                        <input
+                                            type="email"
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            placeholder="name@example.com"
+                                            required
+                                            className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all text-black placeholder-zinc-500 font-medium"
+                                        />
+                                        <button
+                                            type="submit"
+                                            disabled={status === 'loading'}
+                                            className="bg-purple-600 text-white hover:bg-purple-500 rounded-lg px-4 py-2 text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap uppercase tracking-wider"
+                                        >
+                                            {status === 'loading' ? '...' : 'SEND'}
+                                        </button>
+                                    </form>
                                 </>
                             )}
                         </div>
                     </div>
-
                 </div>
             </div>
 
             {/* Footer */}
-            <footer className="w-full max-w-5xl mt-auto pt-6 pb-6 flex flex-col md:flex-row items-center justify-between text-zinc-600 text-sm z-10 gap-4 border-t border-zinc-900/50">
+            <footer className="w-full max-w-5xl pt-4 pb-4 flex flex-col md:flex-row items-center justify-between text-zinc-600 text-sm z-10 gap-4 border-t border-zinc-900/50">
                 <div className="flex items-center gap-6">
                     <a href="https://github.com/rusgariana/synchro" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors" title="View Source">
                         <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
