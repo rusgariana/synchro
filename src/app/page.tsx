@@ -695,7 +695,7 @@ export default function Home() {
                                                 onClick={() => setActiveTab(tab)}
                                                 className={`relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'}`}
                                             >
-                                                {tab === 'match' ? 'Match' : tab === 'schedule' ? 'My Events' : 'Sessions'}
+                                                {tab === 'match' ? 'Match-v2' : tab === 'schedule' ? 'My Events' : 'Sessions'}
                                                 {badgeCount > 0 && (
                                                     <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
                                                         {badgeCount}
