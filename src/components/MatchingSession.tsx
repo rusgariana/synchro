@@ -855,7 +855,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                         onClick={createSession}
                         className="flex flex-col items-center justify-center p-8 min-h-[200px] rounded-3xl bg-zinc-800/40 hover:bg-zinc-800 border border-zinc-700/50 hover:border-primary/50 group text-center transition-all shadow-xl hover:shadow-primary/20 backdrop-blur-md"
                     >
-                        <h3 className="text-2xl font-bold mb-4 group-hover:text-primary transition-colors">Join Session</h3>
+                        <h3 className="text-2xl font-bold mb-4 group-hover:text-primary transition-colors">Start Session</h3>
                         <p className="text-sm text-zinc-400 font-medium">Host a new matching session</p>
                     </button>
 
