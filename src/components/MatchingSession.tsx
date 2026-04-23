@@ -255,7 +255,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
             // Check if this session already exists by ID (e.g. loaded from history)
             const existingById = all.find(s => s.id === currentSessionId);
             const date = existingById ? existingById.date : new Date().toISOString();
-            saveSession({ id: currentSessionId, role, date, matches: currentMatches, notes: {}, privateNotes: privateNotes || {}, proposals: currentProposals, label, peerEmail: peerEmail || undefined });
+            saveSession({ id: currentSessionId, role: role!, date, matches: currentMatches, notes: {}, privateNotes: privateNotes || {}, proposals: currentProposals, label, peerEmail: peerEmail || undefined });
         }
 
         const updated = getSavedSessions();
