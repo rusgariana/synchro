@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { CalendarEvent } from '@/lib/calendar';
 import {
     generatePrivateKey,
@@ -36,17 +36,29 @@ interface Message {
 }
 
 export function MatchingSession({ events, accessToken, userName, userEmail, viewMode = 'IDLE', activeSessionId, onSessionChange, onSwitchToSessions }: Props) {
-    const [state, setState] = useState<State>('IDLE');
+    // Saved Sessions State (Lazy Initializer for synchronous mount)
+    const [savedSessions, setSavedSessions] = useState<SavedSession[]>(() => getSavedSessions());
+    
+    // Determine initial session if activeSessionId is provided (for HISTORY mode auto-load)
+    const initialSession = useMemo(() => {
+        if (viewMode !== 'HISTORY' || !activeSessionId) return null;
+        return savedSessions.find(s => s.id === activeSessionId) || null;
+    }, [viewMode, activeSessionId, savedSessions]);
+
+    const [state, setState] = useState<'IDLE' | 'CREATED' | 'JOINED' | 'EXCHANGING' | 'COMPUTING' | 'RESULTS'>(() => initialSession ? 'RESULTS' : 'IDLE');
     const [displayMode, setDisplayMode] = useState<'list' | 'calendar'>('list');
-    const [sessionId, setSessionId] = useState('');
+    const [sessionId, setSessionId] = useState(initialSession ? initialSession.id : '');
     const [inputSessionId, setInputSessionId] = useState('');
-    const [role, setRole] = useState<'INITIATOR' | 'JOINER' | null>(null);
+    const [role, setRole] = useState<'INITIATOR' | 'JOINER' | null>(initialSession ? initialSession.role as any : null);
     const [logs, setLogs] = useState<string[]>([]);
-    const [matches, setMatches] = useState<CalendarEvent[]>([]);
-    const [sessionLabel, setSessionLabel] = useState<string>('');
+    const [matches, setMatches] = useState<CalendarEvent[]>(initialSession ? initialSession.matches : []);
+    const [sessionLabel, setSessionLabel] = useState<string>(initialSession ? initialSession.label || '' : '');
     const [isEditingLabel, setIsEditingLabel] = useState<boolean>(false);
-    const [peerName, setPeerName] = useState<string>('');
-    const [peerEmail, setPeerEmail] = useState<string>('');
+    const [peerName, setPeerName] = useState<string>(() => {
+        if (!initialSession) return '';
+        return (initialSession.label || '').replace(/^Synchro w\/ /i, '').trim();
+    });
+    const [peerEmail, setPeerEmail] = useState<string>(initialSession ? initialSession.peerEmail || '' : '');
     // Tracks the LIVE session for polling — NOT changed by loadSavedSession
     const liveSessionIdRef = useRef<string>('');
     // Tracks all messages we've sent — used for gossip-based cold-start recovery
@@ -54,7 +66,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
     // Tracks recently received proposal signals for visual notification flashes
     const [flashedEvents, setFlashedEvents] = useState<Record<string, 'positive' | 'negative'>>({});
     // Tracks whether the user is currently viewing a loaded session (suppresses duplicate notifications)
-    const isViewingRef = useRef(false);
+    const isViewingRef = useRef(!!initialSession);
 
     const { expireSession } = useGoogleAuth();
 
@@ -63,11 +75,12 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
     const [sharedSecret, setSharedSecret] = useState<string | null>(null);
 
     // Meeting Proposal State
-    const [proposals, setProposals] = useState<Record<string, ProposalState>>({});
+    const [proposals, setProposals] = useState<Record<string, ProposalState>>(initialSession ? initialSession.proposals || {} : {});
     const [proposingEventId, setProposingEventId] = useState<string | null>(null);
 
     // Google Private Notes State
     const [privateNotes, setPrivateNotes] = useState<Record<string, string>>(() => {
+        if (initialSession) return initialSession.privateNotes || {};
         const initial: Record<string, string> = {};
         events.forEach(e => {
             if (e.privateNote) {
@@ -82,7 +95,14 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
 
     // Export State
     const [exportingEventId, setExportingEventId] = useState<string | null>(null);
-    const [exportedEvents, setExportedEvents] = useState<Record<string, string>>({}); // uid -> googleEventId
+    const [exportedEvents, setExportedEvents] = useState<Record<string, string>>(() => {
+        if (!initialSession) return {};
+        const exported: Record<string, string> = {};
+        Object.entries(initialSession.proposals || {}).forEach(([uid, p]) => {
+            if ((p as any).googleEventId) exported[uid] = (p as any).googleEventId;
+        });
+        return exported;
+    }); // uid -> googleEventId
 
     // Sync exported event to synchro_my_exported so My Events shows green tick too
     const syncExportToMyEvents = (uid: string, gId: string) => {
@@ -162,19 +182,15 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
         setPrivateNoteText('');
     };
 
-    // Saved Sessions State
-    const [savedSessions, setSavedSessions] = useState<SavedSession[]>([]);
     const [isSyncingHistory, setIsSyncingHistory] = useState(false);
-
-    // Initial Load & Sync
+    
+    // Initial Sync from Google (merges into already-initialized lazy state)
     useEffect(() => {
-        const local = getSavedSessions();
-        setSavedSessions(local);
-
         if (accessToken) {
             setIsSyncingHistory(true);
             fetchGoogleSessionHistory(accessToken).then(googleSessions => {
                 if (googleSessions.length > 0) {
+                    const local = getSavedSessions();
                     const merged = [...local];
                     googleSessions.forEach(gs => {
                         const localIdx = merged.findIndex(s => s.id === gs.id);
@@ -203,48 +219,60 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
         }
     }, [accessToken]);
 
-     // Auto-save: merge into existing same-peer session to avoid duplicate entries
-    useEffect(() => {
-        if (state === 'RESULTS' && sessionId && role && matches.length > 0) {
-            const label = sessionLabel || 'Synchro w/ Peer';
-            const all = getSavedSessions();
-            // Match ONLY by peerEmail — never by display name/label
-            const existingIdx = all.findIndex(s => {
-                if (s.id === sessionId) return false;
-                if (peerEmail && s.peerEmail) return s.peerEmail === peerEmail;
-                return false; // no email = no merge
-            });
+    const persistSession = (currentSessionId: string, currentMatches: any[], currentProposals: any) => {
+        if (!currentSessionId || currentMatches.length === 0) return;
+        
+        const label = sessionLabel || 'Synchro w/ Peer';
+        const all = getSavedSessions();
+        
+        // Match ONLY by peerEmail — never by display name/label
+        const existingIdx = all.findIndex(s => {
+            if (s.id === currentSessionId) return false;
+            // Use local peerEmail if available, otherwise check the session record
+            if (peerEmail && s.peerEmail) return s.peerEmail === peerEmail;
+            return false;
+        });
 
-            if (existingIdx >= 0) {
-                // Merge current proposals/matches into the existing session
-                const existing = all[existingIdx];
-                const mergedMatches = [...existing.matches];
-                for (const m of matches) {
-                    if (!mergedMatches.find(e => e.uid === m.uid)) mergedMatches.push(m);
-                }
-                const mergedProposals = { ...existing.proposals };
-                for (const [uid, p] of Object.entries(proposals)) {
-                    const existingStatus = mergedProposals[uid]?.status;
-                    if (!existingStatus || existingStatus === 'none' || p.status !== 'none') {
-                        mergedProposals[uid] = p;
-                    }
-                }
-                // Update label to current peer name, keep peerEmail, preserve original date
-                const merged = { ...existing, matches: mergedMatches, proposals: mergedProposals, label, peerEmail: peerEmail || existing.peerEmail };
-                saveSession(merged);
-            } else {
-                // Check if this session already exists by ID (e.g. loaded from history)
-                const existingById = all.find(s => s.id === sessionId);
-                const date = existingById ? existingById.date : new Date().toISOString();
-                saveSession({ id: sessionId, role, date, matches, notes: {}, privateNotes: privateNotes || {}, proposals, label, peerEmail: peerEmail || undefined });
+        if (existingIdx >= 0) {
+            // Merge current proposals/matches into the existing session
+            const existing = all[existingIdx];
+            const mergedMatches = [...existing.matches];
+            for (const m of currentMatches) {
+                if (!mergedMatches.find(e => e.uid === m.uid)) mergedMatches.push(m);
             }
+            const mergedProposals = { ...existing.proposals };
+            for (const [uid, p] of Object.entries(currentProposals)) {
+                const pVal = p as any;
+                const existingStatus = mergedProposals[uid]?.status;
+                if (!existingStatus || existingStatus === 'none' || pVal.status !== 'none') {
+                    mergedProposals[uid] = pVal;
+                }
+            }
+            // Update label to current peer name, keep peerEmail, preserve original date
+            const merged = { ...existing, matches: mergedMatches, proposals: mergedProposals, label, peerEmail: peerEmail || existing.peerEmail };
+            saveSession(merged);
+        } else {
+            // Check if this session already exists by ID (e.g. loaded from history)
+            const existingById = all.find(s => s.id === currentSessionId);
+            const date = existingById ? existingById.date : new Date().toISOString();
+            saveSession({ id: currentSessionId, role, date, matches: currentMatches, notes: {}, privateNotes: privateNotes || {}, proposals: currentProposals, label, peerEmail: peerEmail || undefined });
+        }
 
-            const updated = getSavedSessions();
+        const updated = getSavedSessions();
+        
+        // Gating: Only update state if data has actually changed to prevent loops
+        if (JSON.stringify(updated) !== JSON.stringify(all)) {
             setSavedSessions(updated);
             if (accessToken) saveGoogleSessionHistory(accessToken, updated.slice(0, 10));
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [state, sessionId, role, matches, proposals, sessionLabel, accessToken]);
+    };
+
+    // Auto-save: merge into existing same-peer session to avoid duplicate entries
+    useEffect(() => {
+        if (state === 'RESULTS' && sessionId && role && matches.length > 0) {
+            persistSession(sessionId, matches, proposals);
+        }
+    }, [state, sessionId, matches, proposals]);
 
     const loadSavedSession = (s: SavedSession) => {
         // Mark as viewing to suppress duplicate notifications from old messages
@@ -291,16 +319,6 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
             });
         }
     };
-
-    // Auto-load session when activeSessionId changes in HISTORY mode
-    useEffect(() => {
-        if (viewMode !== 'HISTORY' || !activeSessionId) return;
-        const session = savedSessions.find(s => s.id === activeSessionId);
-        if (session) {
-            loadSavedSession(session);
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeSessionId, viewMode]);
 
     const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -533,13 +551,20 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
             if (existing) {
                 // Auto-redirect to existing session in Sessions tab
                 addLog(`Previous session with ${peerName} found — redirecting you now.`);
-                setDuplicateWarning({ label: peerName, session: existing });
+                
+                // ATOMIC ACTION: Merge data and save to localStorage IMMEDIATELY before redirect
+                persistSession(sessionId, matches, proposals);
+                
                 // Persist the warning so the HISTORY instance can show it after tab switch
                 localStorage.setItem('synchro_duplicate_redirect', JSON.stringify({ id: existing.id, label: peerName }));
+                
+                // Update parent state IMMEDIATELY to lock in the redirect
+                onSessionChange?.(existing.id);
+                setDuplicateWarning({ label: peerName, session: existing });
+                
                 setTimeout(() => {
                     onSwitchToSessions?.();
-                    onSessionChange?.(existing.id);
-                    // Load the session directly
+                    // Load the session locally just in case tab switch is delayed
                     loadSavedSession(existing);
                 }, 1500);
             }
@@ -803,6 +828,26 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
 
     return (
         <div className="w-full bg-zinc-900/50 border border-zinc-800 rounded-2xl backdrop-blur-xl p-6 shadow-xl relative overflow-hidden">
+            {/* Global Redirect Banner — survives tab switches and state transitions */}
+            {(() => {
+                try {
+                    const pJson = localStorage.getItem('synchro_duplicate_redirect');
+                    if (!pJson) return null;
+                    const p = JSON.parse(pJson);
+                    const currentId = activeSessionId || sessionId;
+                    
+                    // Visible if we match the current record OR if we are on the Match tab (IDLE) and a record exists in storage
+                    const isVisible = p && (p.id === currentId || (viewMode === 'IDLE' && currentId));
+                    
+                    if (isVisible) return (
+                        <div className="mb-6 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-300 animate-in fade-in slide-in-from-top-2 duration-500">
+                            <span>Previous session with <strong>{p.label}</strong> found — proposals merged into existing record.</span>
+                        </div>
+                    );
+                } catch {}
+                return null;
+            })()}
+
             {state === 'IDLE' && viewMode === 'IDLE' && (
                 <>
                 <div className="grid md:grid-cols-2 gap-6 p-2">
@@ -810,19 +855,19 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                         onClick={createSession}
                         className="flex flex-col items-center justify-center p-8 min-h-[200px] rounded-3xl bg-zinc-800/40 hover:bg-zinc-800 border border-zinc-700/50 hover:border-primary/50 group text-center transition-all shadow-xl hover:shadow-primary/20 backdrop-blur-md"
                     >
-                        <h3 className="text-2xl font-bold mb-4 group-hover:text-primary transition-colors">Start Room</h3>
-                        <p className="text-sm text-zinc-400 font-medium">Host a new secure matching room</p>
+                        <h3 className="text-2xl font-bold mb-4 group-hover:text-primary transition-colors">Join Session</h3>
+                        <p className="text-sm text-zinc-400 font-medium">Host a new matching session</p>
                     </button>
 
                     <div className="flex flex-col items-center justify-center p-8 min-h-[200px] rounded-3xl bg-zinc-800/40 border border-zinc-700/50 text-center shadow-xl backdrop-blur-md">
-                        <h3 className="text-2xl font-bold mb-4">Join Room</h3>
+                        <h3 className="text-2xl font-bold mb-4">Join Session</h3>
                         <div className="w-full max-w-[280px]">
                             <div className="flex items-center gap-2 justify-center w-full">
                                 <input
                                     type="text"
                                     placeholder="Enter Code"
                                     value={inputSessionId}
-                                    onChange={(e) => { setInputSessionId(e.target.value); setDuplicateWarning(null); }}
+                                    onChange={(e) => { setInputSessionId(e.target.value); }}
                                     className="flex-1 min-w-0 bg-zinc-900 border border-zinc-600 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-accent/50 outline-none text-center text-sm"
                                 />
                                 <button
@@ -837,11 +882,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                     </div>
                 </div>
 
-                {duplicateWarning && (
-                    <div className="mt-4 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-300">
-                        <span>Previous session with <strong>{duplicateWarning.label}</strong> exists — proposals merged.</span>
-                    </div>
-                )}
+                {/* Duplicate peer warning removed from here as it is now global at the top */}
 
                 </>
             )}
@@ -1036,18 +1077,7 @@ export function MatchingSession({ events, accessToken, userName, userEmail, view
                         <div className="text-sm font-bold text-zinc-400 uppercase tracking-widest">{matches.length} Matches Found</div>
                     </div>
 
-                    {/* Duplicate peer warning — reads directly from localStorage to survive cross-instance tab switches */}
-                    {(() => {
-                        try {
-                            const p = JSON.parse(localStorage.getItem('synchro_duplicate_redirect') || 'null');
-                            if (p && p.id === sessionId) return (
-                                <div className="mb-4 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-300">
-                                    <span>Previous session with <strong>{p.label}</strong> found — proposals merged into existing record.</span>
-                                </div>
-                            );
-                        } catch {}
-                        return null;
-                    })()}
+                    {/* Duplicate peer warning removed from here as it is now global at the top */}
 
                     <div className="grid gap-4">
                         {displayMode === 'list' ? matches.map(event => (
